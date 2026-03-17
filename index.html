@@ -234,6 +234,32 @@ textarea{resize:vertical;min-height:64px}
 .rb-editor{background:#dbeafe;color:#1d4ed8}
 .rb-viewer{background:#f3f4f6;color:#6b7280}
 .rb-pending{background:#fffbeb;color:#713f12}
+/* ── AI Assistant ── */
+.ai-view{display:flex;height:100%;overflow:hidden;background:var(--bg2)}
+.ai-left{width:300px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+.ai-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.ai-section-hd{padding:12px 16px;font-size:12px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:space-between}
+.ai-rec-list{flex:1;overflow-y:auto;padding:12px}
+.ai-rec-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:border-color .15s}
+.ai-rec-card:hover{border-color:#5046e4}
+.ai-rec-tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500;margin-bottom:6px}
+.ai-rec-title{font-size:13px;font-weight:500;margin-bottom:5px;line-height:1.4}
+.ai-rec-insight{font-size:11px;color:var(--text2);line-height:1.6}
+.ai-chat{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.ai-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.ai-msg{max-width:82%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.65}
+.ai-msg.user{background:#5046e4;color:#fff;align-self:flex-end;border-bottom-right-radius:3px}
+.ai-msg.assistant{background:var(--bg);border:1px solid var(--border);color:var(--text);align-self:flex-start;border-bottom-left-radius:3px}
+.ai-msg.loading{background:var(--bg2);border:1px solid var(--border);color:var(--text3);align-self:flex-start}
+.ai-input-row{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;background:var(--bg)}
+.ai-input{flex:1;padding:9px 12px;border:1px solid var(--border2);border-radius:8px;font-size:13px;outline:none;font-family:inherit;resize:none;height:40px;overflow:hidden}
+.ai-input:focus{border-color:#5046e4;box-shadow:0 0 0 3px rgba(80,70,228,.08)}
+.ai-send{padding:8px 16px;background:#5046e4;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.ai-send:hover{background:#3d34c8}
+.ai-send:disabled{background:#c7c4f0;cursor:not-allowed}
+.ai-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:8px;padding:20px}
+.ai-suggestion{display:inline-block;padding:5px 12px;border:1px solid var(--border2);border-radius:20px;font-size:12px;cursor:pointer;margin:3px;color:var(--text2)}
+.ai-suggestion:hover{background:var(--bg2);border-color:#5046e4;color:#5046e4}
 </style>
 </head>
 <body>
@@ -296,6 +322,7 @@ textarea{resize:vertical;min-height:64px}
     <div class="nav-tab active" onclick="switchTab(this,'calendar')">排期日历</div>
     <div class="nav-tab" onclick="switchTab(this,'stats')">数据统计</div>
     <div class="nav-tab" onclick="switchTab(this,'media')">媒体库</div>
+    <div class="nav-tab" onclick="switchTab(this,'ai')">✦ AI 助手</div>
     <div class="nav-tab" onclick="switchTab(this,'collab')">协作管理</div>
     <div class="nav-tab" onclick="switchTab(this,'logs')">操作日志</div>
   </div>
@@ -1250,6 +1277,7 @@ function renderMain(){
   else if(currentTab==='list'){renderListView(el);}
   else if(currentTab==='stats'){renderStatsView(el);}
   else if(currentTab==='media'){renderMediaView(el);}
+  else if(currentTab==='ai'){renderAIView(el);}
   else if(currentTab==='collab'){renderCollabView(el);}
   else if(currentTab==='logs'){renderLogsView(el);}
 }
@@ -2157,7 +2185,7 @@ function typeDrop(e, targetIdx){
   addLog(`调整了活动类型排序`);
   showNotif('排序已更新，日历行顺序同步变化');
   saveData();
-  renderMain();
+  refreshCatPanel();
 }
 // ===================== END TYPE DRAG REORDER =====================
 
@@ -2226,7 +2254,7 @@ function catDrop(e, targetCi, game){
   _dragCatIdx=null;
   addLog(`调整了《${game}》日历分组顺序`);
   showNotif('分组顺序已更新');
-  saveData(); renderMain();
+  saveData(); refreshCatPanel();
 }
 
 // ── Edit cat name ──
@@ -2255,7 +2283,7 @@ function doEditCat(game, ci){
   cats[ci].cat = name;
   addLog(`将《${game}》分组「${old}」改名为「${name}」`);
   showNotif(`分组已改名为「${name}」`);
-  closeModal(); saveData(); renderMain();
+  closeModal(); saveData(); refreshCatPanel();
 }
 
 // ── Add new group ──
@@ -2291,7 +2319,7 @@ function doAddCat(game){
   GAME_CAT_TEXT[game]=[...ct,newTc];
   addLog(`在《${game}》新增了分组「${name}」`);
   showNotif(`分组「${name}」已新增`);
-  closeModal(); saveData(); renderMain();
+  closeModal(); saveData(); refreshCatPanel();
 }
 
 // ── Delete group ──
@@ -2314,7 +2342,7 @@ function doDeleteCat(game, ci){
   cats.splice(ci,1);
   addLog(`删除了《${game}》分组「${name}」`);
   showNotif(`分组「${name}」已删除`);
-  closeModal(); saveData(); renderMain();
+  closeModal(); saveData(); refreshCatPanel();
 }
 
 // ── Add type to a group ──
@@ -2347,7 +2375,7 @@ function doAddTypeToCat(game, ci){
   cats[ci].rows.push({label:t,types:[t]});
   addLog(`将「${t}」添加到《${game}》分组「${cats[ci].cat}」`);
   showNotif(`「${t}」已添加到分组「${cats[ci].cat}」`);
-  closeModal(); saveData(); renderMain();
+  closeModal(); saveData(); refreshCatPanel();
 }
 
 // ── Move type between groups ──
@@ -2381,16 +2409,34 @@ function doMoveType(game, fromCi, rowIdx){
   cats[toCi].rows.push(row);
   addLog(`将「${row.label}」从《${game}》分组「${cats[fromCi].cat}」移至「${cats[toCi].cat}」`);
   showNotif(`已移动到「${cats[toCi].cat}」`);
-  closeModal(); saveData(); renderMain();
+  closeModal(); saveData(); refreshCatPanel();
 }
 function doRemoveTypeFromCat(game, ci, rowIdx){
   const cats=GAME_CATS[game]||[];
   const row=cats[ci].rows.splice(rowIdx,1)[0];
   addLog(`从《${game}》分组「${cats[ci].cat}」移除了「${row.label}」`);
   showNotif(`「${row.label}」已从分组移除（类型本身保留，仍可重新添加）`);
-  closeModal(); saveData(); renderMain();
+  closeModal(); saveData(); refreshCatPanel();
 }
 // ===================== END CATEGORY GROUP MANAGEMENT =====================
+
+// Refresh only the cat panel in-place without full renderMain
+function refreshCatPanel(){
+  saveData();
+  const sel = document.getElementById('cat-game-sel');
+  const game = sel ? sel.value : calGame;
+  const panel = document.getElementById('cat-panel');
+  if(panel){
+    panel.innerHTML = renderCatPanelHtml(game);
+  } else {
+    // cat panel not visible — just save, no redraw needed
+  }
+  // Also silently refresh the calendar if it's currently visible
+  if(currentTab === 'calendar'){
+    const calContainer = document.getElementById('mainArea');
+    if(calContainer) renderCalendarView(calContainer);
+  }
+}
 
 // ===================== LOGS =====================
 function renderLogsView(container){
@@ -2852,6 +2898,261 @@ function showUserMenu(){
   </div>`;
   document.body.appendChild(ov);
 }
+
+// ===================== AI ASSISTANT =====================
+let aiMessages = []; // chat history
+let aiDailyRecs = null; // cached daily recommendations
+let aiLoading = false;
+
+// Build context snapshot for AI — summarize current data concisely
+function buildAIContext(){
+  const now = TODAY;
+  const active = activities.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now);
+  const upcoming = activities.filter(a=>new Date(a.startTime)>now).sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
+  const recent = activities.filter(a=>new Date(a.endTime)<now).sort((a,b)=>new Date(b.endTime)-new Date(a.endTime)).slice(0,10);
+
+  const gameSummary = GAMES.map(g=>{
+    const acts = activities.filter(a=>a.game===g);
+    const activeActs = acts.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now);
+    return `${g}：共${acts.length}条活动，当前进行中${activeActs.length}条`;
+  }).join('；');
+
+  const typeSummary = ACT_TYPES.map(t=>{
+    const n = activities.filter(a=>a.type===t).length;
+    return `${t}(${n}条)`;
+  }).join('、');
+
+  const activeDetail = active.slice(0,15).map(a=>
+    `[${a.game}·${a.type}] ${a.name}，${a.startTime.split(' ')[0]}~${a.endTime.split(' ')[0]}，渠道:${a.channels.join('/')}${a.intensity?'，力度:'+a.intensity:''}${a.goals?.length?'，目标:'+a.goals.join('/'):''}${a.rules?'，规则:'+a.rules.slice(0,60):''}`
+  ).join('\n');
+
+  const upcomingDetail = upcoming.slice(0,10).map(a=>
+    `[${a.game}·${a.type}] ${a.name}，${a.startTime.split(' ')[0]}开始${a.preheat?'（预热'+a.preheat.split(' ')[0]+'）':''}`
+  ).join('\n');
+
+  return `你是一个专业的游戏运营分析助手，正在帮助分析竞品游戏运营活动排期数据。
+
+【当前数据概览】
+- 今日日期：${TODAY_STR}
+- 竞品游戏：${GAMES.join('、')}
+- 活动类型：${typeSummary}
+- 各游戏活动量：${gameSummary}
+- 当前进行中活动共 ${active.length} 条，即将开始活动共 ${upcoming.length} 条
+
+【当前进行中的活动（最多15条）】
+${activeDetail || '无'}
+
+【即将开始的活动（最多10条）】
+${upcomingDetail || '无'}
+
+请基于以上真实数据回答用户的问题。回答要简洁专业，适当给出分析洞察。如果问题超出数据范围，请如实说明。`;
+}
+
+// Call Anthropic API
+async function callClaude(userMsg, systemPrompt){
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [...aiMessages.filter(m=>m.role!=='system'), {role:'user', content:userMsg}]
+    })
+  });
+  const data = await resp.json();
+  if(data.error) throw new Error(data.error.message);
+  return data.content?.find(b=>b.type==='text')?.text || '抱歉，无法获取回答';
+}
+
+// ── Render AI View ──
+function renderAIView(container){
+  container.innerHTML=`<div class="ai-view">
+    <!-- Left: Daily Recommendations -->
+    <div class="ai-left">
+      <div class="ai-section-hd">
+        <span>✦ 每日活动推荐</span>
+        <button class="btn sm" id="rec-refresh-btn" onclick="loadDailyRecs()" style="font-size:10px;padding:2px 8px">刷新</button>
+      </div>
+      <div class="ai-rec-list" id="ai-rec-list">
+        <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">
+          <div style="font-size:24px;margin-bottom:8px">✦</div>
+          <div>正在生成今日推荐…</div>
+        </div>
+      </div>
+    </div>
+    <!-- Right: Q&A Chat -->
+    <div class="ai-right">
+      <div class="ai-section-hd">
+        <span>💬 数据问答</span>
+        <span style="font-size:10px;color:var(--text3);font-weight:400">基于工具内的活动数据回答问题</span>
+      </div>
+      <div class="ai-chat">
+        <div class="ai-messages" id="ai-messages">
+          <div class="ai-empty">
+            <div style="font-size:22px">💬</div>
+            <div style="font-size:13px;font-weight:500">问我关于竞品活动的任何问题</div>
+            <div style="font-size:11px;margin-bottom:10px">我会根据工具内的真实数据回答</div>
+            <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:400px">
+              ${['哪款游戏活动最多？','本月有哪些充值返利活动？','王者荣耀近期有什么大活动？','哪些活动快结束了？','各游戏活动力度怎么样？','最近有哪些跨界联动？'].map(q=>
+                `<span class="ai-suggestion" onclick="sendAIQuestion('${q}')">${q}</span>`
+              ).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="ai-input-row">
+          <textarea class="ai-input" id="ai-input" placeholder="输入问题，如：王者荣耀本月有哪些活动？" rows="1"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAIMessage()}"
+            oninput="this.style.height='40px';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
+          <button class="ai-send" id="ai-send-btn" onclick="sendAIMessage()">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // Load recommendations
+  if(aiDailyRecs){
+    renderRecs(aiDailyRecs);
+  } else {
+    loadDailyRecs();
+  }
+
+  // Restore chat history
+  if(aiMessages.length > 0){
+    const msgContainer = document.getElementById('ai-messages');
+    if(msgContainer){
+      msgContainer.innerHTML = '';
+      aiMessages.forEach(m=>{
+        if(m.role !== 'system') appendMessage(m.role, m.content);
+      });
+    }
+  }
+}
+
+// ── Daily Recommendations ──
+async function loadDailyRecs(){
+  const btn = document.getElementById('rec-refresh-btn');
+  const list = document.getElementById('ai-rec-list');
+  if(!list) return;
+  if(btn) btn.disabled = true;
+  list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px"><div style="font-size:20px;margin-bottom:8px;animation:spin .8s linear infinite;display:inline-block">◌</div><br>AI 正在分析中…</div>`;
+
+  const prompt = buildAIContext();
+  const today = TODAY_STR;
+  const userMsg = `今天是${today}。请基于以上竞品活动数据，给运营分析师推荐今天值得重点关注的3~4个活动，每个推荐包含：
+1. 活动名称和所属游戏
+2. 推荐理由（为什么今天特别值得关注）
+3. 一条专业洞察或行动建议（如：可以参考这个活动的力度设计竞品方案）
+
+请以JSON格式返回，格式：
+[{"game":"游戏名","type":"活动类型","name":"活动名","reason":"推荐理由","insight":"洞察建议","tag":"今日开始/即将结束/高价值参考/竞争激烈","tagColor":"#dc2626或#d97706或#5046e4或#059669"}]
+只返回JSON数组，不要其他文字。`;
+
+  try{
+    const result = await callClaude(userMsg, prompt);
+    const clean = result.replace(/```json|```/g,'').trim();
+    const recs = JSON.parse(clean);
+    aiDailyRecs = recs;
+    renderRecs(recs);
+  }catch(e){
+    console.warn('AI rec error', e);
+    if(list) list.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--text3)">
+      <div style="color:#d93025;margin-bottom:8px">⚠ 推荐生成失败</div>
+      <div>${e.message}</div>
+      <div style="margin-top:8px;font-size:11px">请确认工具已接入 Anthropic API</div>
+    </div>`;
+  }
+  if(btn) btn.disabled = false;
+}
+
+function renderRecs(recs){
+  const list = document.getElementById('ai-rec-list');
+  if(!list) return;
+  if(!recs || !recs.length){
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">暂无推荐数据</div>`;
+    return;
+  }
+  list.innerHTML = recs.map((r,i)=>`
+    <div class="ai-rec-card" onclick="sendAIQuestion('告诉我更多关于${r.name}的信息')">
+      <div>
+        <span class="ai-rec-tag" style="background:${r.tagColor||'#5046e4'}22;color:${r.tagColor||'#5046e4'}">${r.tag||'推荐关注'}</span>
+        <span style="font-size:10px;color:var(--text3);margin-left:6px">${r.game} · ${r.type}</span>
+      </div>
+      <div class="ai-rec-title">${r.name}</div>
+      <div class="ai-rec-insight" style="margin-bottom:5px;color:var(--text2)">${r.reason}</div>
+      <div class="ai-rec-insight" style="background:var(--bg2);padding:6px 8px;border-radius:5px;border-left:2px solid ${r.tagColor||'#5046e4'}">
+        💡 ${r.insight}
+      </div>
+    </div>`).join('') + `<div style="font-size:10px;color:var(--text3);text-align:center;padding:6px 0">${TODAY_STR} 每日推荐 · 点击卡片可继续追问</div>`;
+}
+
+// ── Q&A Chat ──
+function appendMessage(role, content){
+  const container = document.getElementById('ai-messages');
+  if(!container) return;
+  // Remove empty state if present
+  const empty = container.querySelector('.ai-empty');
+  if(empty) empty.remove();
+
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  // Simple markdown: bold, line breaks
+  div.innerHTML = content
+    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\n/g,'<br>');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+function sendAIQuestion(q){
+  const input = document.getElementById('ai-input');
+  if(input){ input.value = q; input.style.height = '40px'; }
+  sendAIMessage();
+}
+
+async function sendAIMessage(){
+  if(aiLoading) return;
+  const input = document.getElementById('ai-input');
+  if(!input) return;
+  const text = input.value.trim();
+  if(!text) return;
+
+  aiLoading = true;
+  input.value = ''; input.style.height = '40px';
+  const sendBtn = document.getElementById('ai-send-btn');
+  if(sendBtn) sendBtn.disabled = true;
+
+  // Add user message to UI and history
+  appendMessage('user', text);
+  aiMessages.push({role:'user', content:text});
+
+  // Loading indicator
+  const loadingDiv = appendMessage('assistant', '▋');
+  if(loadingDiv) loadingDiv.classList.add('loading');
+
+  try{
+    const systemPrompt = buildAIContext();
+    const reply = await callClaude(text, systemPrompt);
+
+    // Replace loading with actual reply
+    if(loadingDiv){ loadingDiv.remove(); }
+    appendMessage('assistant', reply);
+    aiMessages.push({role:'assistant', content:reply});
+
+    // Keep history to last 20 messages
+    if(aiMessages.length > 20) aiMessages = aiMessages.slice(-20);
+
+  }catch(e){
+    if(loadingDiv){ loadingDiv.remove(); }
+    appendMessage('assistant', `⚠ 请求失败：${e.message}\n\n请确认 Anthropic API 已接入（工具使用 Claude Sonnet 模型）。`);
+  }
+
+  aiLoading = false;
+  if(sendBtn) sendBtn.disabled = false;
+  if(input) input.focus();
+}
+// ===================== END AI ASSISTANT =====================
 
 // ===================== INIT =====================
 initStatusBar();
