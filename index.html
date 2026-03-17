@@ -1687,7 +1687,29 @@ function renderCollabView(container){
       </div>
     </div>
 
-    <!-- ③ 成员与权限管理 -->
+    <!-- ③ 日历分组管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600">日历分组管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">管理排期日历左侧的分组标题（如「版本&amp;活动」「商业化」），可修改名称、调整顺序、新增或删除分组</div>
+        </div>
+        ${canManage?`<div style="display:flex;gap:6px">
+          <select id="cat-game-sel" style="font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:5px" onchange="renderCatPanel()">
+            ${GAMES.map(g=>`<option value="${g}" ${g===calGame?'selected':''}>${g}</option>`).join('')}
+          </select>
+          <button class="btn primary" onclick="showAddCatDialog()">+ 新增分组</button>
+        </div>`:''}
+      </div>
+      <div id="cat-panel">
+        ${canManage ? renderCatPanelHtml(calGame) : `<div style="padding:14px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text3)">仅管理员可编辑分组</div>`}
+      </div>
+      <div style="margin-top:8px;padding:10px 12px;background:#e8e6ff;border-radius:6px;font-size:11px;color:#3c3489;line-height:1.7">
+        <strong>说明：</strong>分组是日历的视觉分区，每个分组下包含若干活动类型行。拖拽分组可调整分组顺序，点击分组内的类型可将其移动到其他分组。
+      </div>
+    </div>
+
+    <!-- ④ 成员与权限管理 -->
     <div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div>
@@ -2034,6 +2056,237 @@ function typeDrop(e, targetIdx){
   renderMain();
 }
 // ===================== END TYPE DRAG REORDER =====================
+
+// ===================== CATEGORY GROUP MANAGEMENT =====================
+
+function renderCatPanelHtml(game){
+  const cats = GAME_CATS[game] || [];
+  const catColors = GAME_CAT_COLORS[game] || [];
+  const catTexts  = GAME_CAT_TEXT[game]   || [];
+  if(!cats.length) return `<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">该游戏暂无分组，点击「新增分组」创建</div>`;
+
+  return cats.map((cat,ci)=>{
+    const bg = catColors[ci % catColors.length] || '#f3f4f6';
+    const tc = catTexts[ci % catTexts.length]   || '#374151';
+    const typeChips = cat.rows.map((row,ri)=>`
+      <span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border2);border-radius:14px;padding:2px 8px;font-size:11px;cursor:pointer;margin:2px"
+        onclick="showMoveTypeDialog('${game}',${ci},${ri})"
+        title="点击移动到其他分组">
+        ${row.label}
+        <span style="color:var(--text3);font-size:10px">⇄</span>
+      </span>`).join('');
+
+    return`<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden"
+      draggable="true" data-ci="${ci}"
+      ondragstart="catDragStart(event,${ci},'${game}')"
+      ondragover="catDragOver(event)"
+      ondragleave="catDragLeave(event)"
+      ondrop="catDrop(event,${ci},'${game}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${bg};cursor:grab">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:${tc};opacity:.5;font-size:14px">⠿</span>
+          <span style="font-size:13px;font-weight:600;color:${tc}">${cat.cat}</span>
+          <span style="font-size:10px;color:${tc};opacity:.7">${cat.rows.length} 个类型</span>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="btn sm" onclick="showEditCatDialog('${game}',${ci})" style="font-size:10px;padding:2px 8px">修改名称</button>
+          <button class="btn sm" onclick="showAddTypeToCatDialog('${game}',${ci})" style="font-size:10px;padding:2px 8px">+ 添加类型</button>
+          <button class="btn sm danger" onclick="confirmDeleteCat('${game}',${ci})" style="font-size:10px;padding:2px 8px">删除分组</button>
+        </div>
+      </div>
+      <div style="padding:8px 12px;background:var(--bg);min-height:36px;display:flex;flex-wrap:wrap;align-items:center;gap:2px">
+        ${typeChips || `<span style="font-size:11px;color:var(--text3)">暂无活动类型，点击「+ 添加类型」</span>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCatPanel(){
+  const sel = document.getElementById('cat-game-sel');
+  const game = sel ? sel.value : calGame;
+  const panel = document.getElementById('cat-panel');
+  if(panel) panel.innerHTML = renderCatPanelHtml(game);
+}
+
+// ── Drag reorder groups ──
+let _dragCatIdx = null, _dragCatGame = null;
+function catDragStart(e, ci, game){ _dragCatIdx=ci; _dragCatGame=game; e.dataTransfer.effectAllowed='move'; e.currentTarget.style.opacity='.4'; }
+function catDragOver(e){ e.preventDefault(); e.currentTarget.style.outline='2px solid #5046e4'; }
+function catDragLeave(e){ e.currentTarget.style.outline=''; }
+function catDrop(e, targetCi, game){
+  e.preventDefault(); e.currentTarget.style.outline=''; e.currentTarget.style.opacity='';
+  if(_dragCatIdx===null||_dragCatIdx===targetCi||_dragCatGame!==game){_dragCatIdx=null;return;}
+  const cats = GAME_CATS[game];
+  const moved = cats.splice(_dragCatIdx,1)[0];
+  cats.splice(targetCi,0,moved);
+  _dragCatIdx=null;
+  addLog(`调整了《${game}》日历分组顺序`);
+  showNotif('分组顺序已更新');
+  saveData(); renderMain();
+}
+
+// ── Edit cat name ──
+function showEditCatDialog(game, ci){
+  const cat = (GAME_CATS[game]||[])[ci]; if(!cat)return;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">修改分组名称</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">分组名称 <span class="req">*</span></div>
+      <input id="edit-cat-name" type="text" value="${cat.cat}">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doEditCat('${game}',${ci})">保存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{const el=document.getElementById('edit-cat-name');if(el){el.focus();el.select();}},50);
+}
+function doEditCat(game, ci){
+  const name = document.getElementById('edit-cat-name').value.trim();
+  if(!name){showNotif('分组名称不能为空',true);return;}
+  const cats = GAME_CATS[game]||[]; if(!cats[ci])return;
+  const old = cats[ci].cat;
+  cats[ci].cat = name;
+  addLog(`将《${game}》分组「${old}」改名为「${name}」`);
+  showNotif(`分组已改名为「${name}」`);
+  closeModal(); saveData(); renderMain();
+}
+
+// ── Add new group ──
+function showAddCatDialog(){
+  const sel=document.getElementById('cat-game-sel');
+  const game=sel?sel.value:calGame;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">新增分组 — ${game}</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">分组名称 <span class="req">*</span></div>
+      <input id="new-cat-name" type="text" placeholder="如：联运活动、赛事运营">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddCat('${game}')">确认新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('new-cat-name')?.focus(),50);
+}
+function doAddCat(game){
+  const name=document.getElementById('new-cat-name').value.trim();
+  if(!name){showNotif('分组名称不能为空',true);return;}
+  if(!GAME_CATS[game]) GAME_CATS[game]=[];
+  GAME_CATS[game].push({cat:name,rows:[]});
+  // Extend color arrays
+  const cc=GAME_CAT_COLORS[game]||[];
+  const ct=GAME_CAT_TEXT[game]||[];
+  const newBg=['#f3e8ff','#e0f2fe','#fef3c7','#f0fdf4','#fce7f3'][cc.length%5];
+  const newTc=['#6b21a8','#0369a1','#92400e','#166534','#9d174d'][ct.length%5];
+  GAME_CAT_COLORS[game]=[...cc,newBg];
+  GAME_CAT_TEXT[game]=[...ct,newTc];
+  addLog(`在《${game}》新增了分组「${name}」`);
+  showNotif(`分组「${name}」已新增`);
+  closeModal(); saveData(); renderMain();
+}
+
+// ── Delete group ──
+function confirmDeleteCat(game, ci){
+  const cat=(GAME_CATS[game]||[])[ci];if(!cat)return;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box">
+    <div class="confirm-title">确认删除分组</div>
+    <div class="confirm-desc">确定删除分组「${cat.cat}」吗？<br>${cat.rows.length>0?`<span style="color:#d93025">该分组包含 ${cat.rows.length} 个活动类型行，删除后这些行将不在日历中显示，但活动数据不会丢失。</span>`:'该分组为空。'}</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="doDeleteCat('${game}',${ci})">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function doDeleteCat(game, ci){
+  const cats=GAME_CATS[game]||[];
+  const name=cats[ci]?.cat||'';
+  cats.splice(ci,1);
+  addLog(`删除了《${game}》分组「${name}」`);
+  showNotif(`分组「${name}」已删除`);
+  closeModal(); saveData(); renderMain();
+}
+
+// ── Add type to a group ──
+function showAddTypeToCatDialog(game, ci){
+  const cat=(GAME_CATS[game]||[])[ci];if(!cat)return;
+  const usedTypes=((GAME_CATS[game]||[]).flatMap(c=>c.rows.map(r=>r.label)));
+  const available=ACT_TYPES.filter(t=>!usedTypes.includes(t));
+  if(!available.length){showNotif('所有活动类型已分配到各分组',true);return;}
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">添加活动类型到「${cat.cat}」</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">选择活动类型</div>
+      <select id="add-type-to-cat" size="${Math.min(available.length,6)}" style="width:100%">
+        ${available.map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddTypeToCat('${game}',${ci})">添加</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function doAddTypeToCat(game, ci){
+  const t=document.getElementById('add-type-to-cat').value;
+  if(!t)return;
+  const cats=GAME_CATS[game]||[];
+  if(!cats[ci])return;
+  cats[ci].rows.push({label:t,types:[t]});
+  addLog(`将「${t}」添加到《${game}》分组「${cats[ci].cat}」`);
+  showNotif(`「${t}」已添加到分组「${cats[ci].cat}」`);
+  closeModal(); saveData(); renderMain();
+}
+
+// ── Move type between groups ──
+function showMoveTypeDialog(game, fromCi, rowIdx){
+  const cats=GAME_CATS[game]||[];
+  const cat=cats[fromCi];if(!cat)return;
+  const row=cat.rows[rowIdx];if(!row)return;
+  const targets=cats.map((c,i)=>i!==fromCi?`<option value="${i}">${c.cat}</option>`:'').join('');
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:6px">移动「${row.label}」到其他分组</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">当前分组：${cat.cat}</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">目标分组</div>
+      <select id="move-target-cat" style="width:100%">
+        ${targets||`<option disabled>无其他分组</option>`}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger sm" style="margin-right:auto" onclick="doRemoveTypeFromCat('${game}',${fromCi},${rowIdx})">从分组中移除</button>
+      <button class="btn primary" onclick="doMoveType('${game}',${fromCi},${rowIdx})">移动</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function doMoveType(game, fromCi, rowIdx){
+  const toCi=parseInt(document.getElementById('move-target-cat').value);
+  const cats=GAME_CATS[game]||[];
+  const row=cats[fromCi].rows.splice(rowIdx,1)[0];
+  cats[toCi].rows.push(row);
+  addLog(`将「${row.label}」从《${game}》分组「${cats[fromCi].cat}」移至「${cats[toCi].cat}」`);
+  showNotif(`已移动到「${cats[toCi].cat}」`);
+  closeModal(); saveData(); renderMain();
+}
+function doRemoveTypeFromCat(game, ci, rowIdx){
+  const cats=GAME_CATS[game]||[];
+  const row=cats[ci].rows.splice(rowIdx,1)[0];
+  addLog(`从《${game}》分组「${cats[ci].cat}」移除了「${row.label}」`);
+  showNotif(`「${row.label}」已从分组移除（类型本身保留，仍可重新添加）`);
+  closeModal(); saveData(); renderMain();
+}
+// ===================== END CATEGORY GROUP MANAGEMENT =====================
 
 // ===================== LOGS =====================
 function renderLogsView(container){
