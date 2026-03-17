@@ -1204,13 +1204,63 @@ function renderCalendarView(container){
     return{left,width};
   }
 
-  // build flat row list with cat separators
+  // ── Row splitting: detect overlapping bars and assign to sub-rows ──
+  // Two activities "overlap in the calendar" if their visible date ranges intersect this month.
+  function actsOverlap(a, b){
+    const mStart=new Date(year,month,1), mEnd=new Date(year,month,daysInMonth,23,59,59);
+    const as=new Date(a.startTime), ae=new Date(a.endTime);
+    const bs=new Date(b.startTime), be=new Date(b.endTime);
+    const visAs=as<mStart?mStart:as, visAe=ae>mEnd?mEnd:ae;
+    const visBs=bs<mStart?mStart:bs, visBe=be>mEnd?mEnd:be;
+    if(visAs>mEnd||visAe<mStart||visBs>mEnd||visBe<mStart)return false;
+    return visAs<=visBe && visBs<=visAe;
+  }
+
+  // Pack acts into non-overlapping sub-rows using greedy interval packing
+  function packIntoSubRows(acts){
+    const subRows=[]; // each subRow is array of acts
+    acts.forEach(act=>{
+      // find first subRow where act doesn't overlap any existing act
+      let placed=false;
+      for(const sr of subRows){
+        if(!sr.some(existing=>actsOverlap(act,existing))){
+          sr.push(act);placed=true;break;
+        }
+      }
+      if(!placed) subRows.push([act]);
+    });
+    return subRows;
+  }
+
+  // build flat row list with cat separators — each type row may expand into multiple sub-rows
   const rowItems=[];
   cats.forEach((catDef,ci)=>{
     rowItems.push({type:'cat',label:catDef.cat,ci});
     catDef.rows.forEach(rowDef=>{
       const rowActs=gameActs.filter(a=>rowDef.types.includes(a.type));
-      rowItems.push({type:'row',label:rowDef.label,acts:rowActs,types:rowDef.types,ci});
+      // filter to acts visible this month
+      const visActs=rowActs.filter(a=>{
+        const s=new Date(a.startTime),e=new Date(a.endTime);
+        return s<=new Date(year,month,daysInMonth,23,59,59)&&e>=new Date(year,month,1);
+      });
+      const subRows=visActs.length>0?packIntoSubRows(visActs):[];
+      if(subRows.length===0){
+        // empty row — show one blank row
+        rowItems.push({type:'row',label:rowDef.label,acts:[],types:rowDef.types,ci,subRowIdx:0,totalSubRows:1,allActs:rowActs});
+      } else {
+        subRows.forEach((srActs,sri)=>{
+          rowItems.push({
+            type:'row',
+            label:sri===0?rowDef.label:'',  // label only on first sub-row
+            acts:srActs,
+            types:rowDef.types,
+            ci,
+            subRowIdx:sri,
+            totalSubRows:subRows.length,
+            allActs:rowActs
+          });
+        });
+      }
     });
   });
 
@@ -1229,7 +1279,17 @@ function renderCalendarView(container){
       const tc=catTexts[item.ci%catTexts.length]||'#374151';
       leftRows+=`<div class="left-cat-header" style="background:${bg};color:${tc}">${item.label}</div>`;
     } else {
-      leftRows+=`<div class="left-row">${item.label}</div>`;
+      // For sub-rows after the first, show a continuation indicator
+      if(item.subRowIdx===0){
+        // first sub-row: show label, with row-count badge if multiple
+        const badge=item.totalSubRows>1
+          ?`<span style="margin-left:4px;font-size:9px;background:var(--bg3);color:var(--text3);padding:1px 5px;border-radius:8px">${item.totalSubRows}</span>`
+          :'';
+        leftRows+=`<div class="left-row" title="${item.label}">${item.label}${badge}</div>`;
+      } else {
+        // continuation row — subtle indent indicator
+        leftRows+=`<div class="left-row" style="opacity:.55;font-size:10px;padding-left:18px">↳ 续行 ${item.subRowIdx+1}</div>`;
+      }
     }
   });
 
@@ -1569,17 +1629,16 @@ function renderCollabView(container){
       </div>`:''}
     </div>`).join('');
 
-  // Build type list rows
-  const DEFAULT_TYPE_COLORS={
-    '充值返利':'#dbeafe','版本更新':'#ede9fe','节日活动':'#fce7f3','赛事活动':'#fee2e2',
-    '福利发放':'#dcfce7','跨界联动':'#fef9c3','新服开放':'#ccfbf1','限时折扣':'#ffedd5'
-  };
+  // Build type list rows — draggable if admin
   const typeRows=ACT_TYPES.map((t,i)=>{
-    const c=TYPE_COLORS[t]||{bg:'#f3f4f6',text:'#6b7280'};
-    return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px" id="type-row-${i}">
+    const c=TYPE_COLORS[t]||{bg:'#f3f4f6',text:'#6b7280',border:'#d1d5db'};
+    return`<div class="type-drag-row" draggable="${canManage}" data-idx="${i}"
+      style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px;cursor:${canManage?'grab':'default'};transition:background .1s"
+      ${canManage?`ondragstart="typeDragStart(event,${i})" ondragover="typeDragOver(event)" ondragleave="typeDragLeave(event)" ondrop="typeDrop(event,${i})"`:''}>
       <div style="display:flex;align-items:center;gap:8px;flex:1">
+        ${canManage?`<span style="color:var(--text3);font-size:12px;margin-right:2px;user-select:none">⠿</span>`:''}
         <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c.bg};border:1px solid ${c.border||c.bg};flex-shrink:0"></span>
-        <span id="type-label-${i}">${t}</span>
+        <span>${t}</span>
       </div>
       ${canManage?`<div style="display:flex;gap:5px">
         <button class="btn sm" onclick="startEditType(${i})">修改</button>
@@ -1612,19 +1671,19 @@ function renderCollabView(container){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div>
           <div style="font-size:15px;font-weight:600">活动类型管理</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">当前共 ${ACT_TYPES.length} 种活动类型，管理员可新增或修改</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">当前共 ${ACT_TYPES.length} 种活动类型${canManage?'，可拖拽⠿调整排序，排序同步影响日历行顺序':'，管理员可新增或修改'}</div>
         </div>
         ${canManage?`<button class="btn primary" onclick="showAddTypeDialog()">+ 新增类型</button>`:''}
       </div>
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
         <div style="padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);font-weight:600;display:flex;justify-content:space-between">
-          <span>类型名称</span><span>操作</span>
+          <span>类型名称${canManage?' （拖拽排序）':''}</span><span>操作</span>
         </div>
         <div id="typeListWrap">${typeRows}</div>
         ${!ACT_TYPES.length?`<div style="padding:24px;text-align:center;color:var(--text3)">暂无活动类型，点击「新增类型」添加</div>`:''}
       </div>
       <div style="margin-top:8px;padding:10px 12px;background:#fef9c3;border-radius:6px;font-size:11px;color:#713f12">
-        提示：修改活动类型名称后，已录入的历史活动类型标签不会自动更新，请注意数据一致性。
+        提示：修改活动类型名称后，已录入的历史活动类型标签会同步更新。拖拽调整排序后日历中各行顺序同步变化。
       </div>
     </div>
 
@@ -1925,6 +1984,57 @@ function doDeleteType(idx){
   closeModal();renderMain();
 }
 
+// ===================== TYPE DRAG REORDER =====================
+let _dragTypeIdx = null;
+
+function typeDragStart(e, idx){
+  _dragTypeIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '0.4';
+}
+
+function typeDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.style.background = 'var(--bg2)';
+  e.currentTarget.style.borderTop = '2px solid #5046e4';
+}
+
+function typeDragLeave(e){
+  e.currentTarget.style.background = '';
+  e.currentTarget.style.borderTop = '';
+}
+
+function typeDrop(e, targetIdx){
+  e.preventDefault();
+  e.currentTarget.style.background = '';
+  e.currentTarget.style.borderTop = '';
+  if(_dragTypeIdx === null || _dragTypeIdx === targetIdx){ _dragTypeIdx=null; return; }
+
+  // Reorder ACT_TYPES array
+  const moved = ACT_TYPES.splice(_dragTypeIdx, 1)[0];
+  ACT_TYPES.splice(targetIdx, 0, moved);
+
+  // Also reorder rows in GAME_CATS to match new type order
+  // Each game's cat rows: sort rows within each cat to follow ACT_TYPES order
+  Object.values(GAME_CATS).forEach(cats=>{
+    cats.forEach(cat=>{
+      cat.rows.sort((a,b)=>{
+        const ai = Math.min(...a.types.map(t=>ACT_TYPES.indexOf(t)).filter(i=>i>=0));
+        const bi = Math.min(...b.types.map(t=>ACT_TYPES.indexOf(t)).filter(i=>i>=0));
+        return (ai===-1?999:ai)-(bi===-1?999:bi);
+      });
+    });
+  });
+
+  _dragTypeIdx = null;
+  addLog(`调整了活动类型排序`);
+  showNotif('排序已更新，日历行顺序同步变化');
+  saveData();
+  renderMain();
+}
+// ===================== END TYPE DRAG REORDER =====================
+
 // ===================== LOGS =====================
 function renderLogsView(container){
   container.innerHTML=`<div style="padding:20px;overflow-y:auto;height:100%">
@@ -2021,8 +2131,6 @@ function saveActivity(){
       showNotif(`修改成功：${n}`);
     }
   } else {
-    const dup=activities.find(a=>a.game===g&&a.type===t&&a.startTime.split(' ')[0]===s.split(' ')[0]);
-    if(dup){showNotif(`已有同日期同类型活动「${dup.name}」，请确认是否重复录入`,true);return}
     const gc={'王者荣耀':'WZRY','和平精英':'HPJY','原神':'YS','明日方舟':'MRF','崩坏：星穹铁道':'BHXQTD','第五人格':'DWRG','蛋仔派对':'DZPD'};
     const tc={'充值返利':'RECHARGE','版本更新':'UPDATE','节日活动':'EVENT','赛事活动':'ESPORTS','福利发放':'WELFARE','跨界联动':'COLLAB','新服开放':'NEWSVR','限时折扣':'DISCOUNT'};
     const dc=s.split(' ')[0].replace(/-/g,'');
