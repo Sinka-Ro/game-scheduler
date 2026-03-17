@@ -271,6 +271,20 @@ textarea{resize:vertical;min-height:64px}
       <div class="amsg warn" style="margin-top:0">⏳ 您的账号正在等待管理员审批，审批通过后请刷新页面登录。<br><br>如有疑问请联系管理员。</div>
       <button class="abtn" style="margin-top:14px;background:transparent;color:#5046e4;border:1px solid #5046e4" onclick="authLogout()">退出 / 切换账号</button>
     </div>
+    <!-- no-supabase state: shown to users who open the tool before admin configures Supabase -->
+    <div id="aform-nosupabase" style="display:none">
+      <div class="amsg err" style="margin-top:0;text-align:left">
+        🔒 此工具尚未完成云端配置，暂时无法访问。<br><br>
+        请联系工具管理员完成 Supabase 配置后再访问。
+      </div>
+      <div style="margin-top:16px;border-top:1px solid #e5e5e3;padding-top:14px">
+        <div style="font-size:11px;color:#9b9b9b;margin-bottom:8px">管理员入口（需持有配置信息）</div>
+        <div class="afield"><label class="alabel">Supabase Project URL</label><input class="ainput" id="setup-sb-url" type="text" placeholder="https://xxxx.supabase.co"></div>
+        <div class="afield"><label class="alabel">anon public key</label><input class="ainput" id="setup-sb-key" type="text" placeholder="eyJhbGci..."></div>
+        <button class="abtn" id="setup-sb-btn" onclick="doSetupFromAuthScreen()" style="margin-top:6px">连接并进入</button>
+        <div id="setup-sb-msg"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -542,10 +556,9 @@ async function authRegister(){
 async function authLogout(){
   const sb=getSB();
   if(sb) await sb.auth.signOut().catch(()=>{});
-  currentUser={id:'',name:'',role:'viewer',email:''};
-  document.getElementById('auth-overlay').style.display='flex';
-  authTab('login');
+  currentUser={id:'',name:'',role:'none',email:''};
   updateTopbarUser();
+  showAuthOverlay('login');
 }
 
 async function handleAuthUser(user){
@@ -557,24 +570,36 @@ async function handleAuthUser(user){
     await sb.from('user_profiles').upsert({id:user.id,email:user.email,name:user.user_metadata?.display_name||user.email.split('@')[0],role:'pending',reason:''});
     showPendingState();return;
   }
-  if(prof.role==='pending'||prof.role==='revoked'){showPendingState(prof.role==='revoked');return;}
+  if(prof.role==='pending'||prof.role==='revoked'){
+    showAuthOverlay('pending');
+    if(prof.role==='revoked'){
+      const el=document.getElementById('aform-pending');
+      if(el){const m=el.querySelector('.amsg');if(m)m.textContent='❌ 您的账号访问权限已被撤销，如有疑问请联系管理员。';}
+    }
+    return;
+  }
   currentUser={id:user.id,name:prof.name||prof.email,role:prof.role,email:prof.email};
   document.getElementById('auth-overlay').style.display='none';
   updateTopbarUser();
   addLog('登录系统');
   renderMain();
   if(prof.role==='admin') checkPendingApprovals();
+  // Upcoming activity reminder
+  setTimeout(()=>{
+    const soon=activities.filter(a=>{
+      const d=(new Date(a.startTime)-TODAY)/86400000;
+      return d>0&&d<=3;
+    });
+    if(soon.length) showNotif(`提醒：《${soon[0].game}》「${soon[0].name}」将于 ${Math.ceil((new Date(soon[0].startTime)-TODAY)/86400000)} 天后开始`);
+  },800);
 }
 
 function showPendingState(revoked=false){
-  document.getElementById('auth-tabs').style.display='none';
-  document.getElementById('aform-login').style.display='none';
-  document.getElementById('aform-reg').style.display='none';
-  document.getElementById('aform-pending').style.display='';
+  showAuthOverlay('pending');
   if(revoked){
-    document.getElementById('aform-pending').querySelector('.amsg').textContent='❌ 您的账号访问权限已被撤销，如有疑问请联系管理员。';
+    const el=document.getElementById('aform-pending');
+    if(el){const m=el.querySelector('.amsg');if(m)m.textContent='❌ 您的账号访问权限已被撤销，如有疑问请联系管理员。';}
   }
-  document.getElementById('auth-overlay').style.display='flex';
 }
 
 function updateTopbarUser(){
@@ -582,8 +607,10 @@ function updateTopbarUser(){
   const un=document.getElementById('userName');
   const addBtn=document.getElementById('add-btn');
   if(av) av.textContent=currentUser.name?currentUser.name[0].toUpperCase():'?';
-  if(un) un.textContent=(currentUser.name||'游客')+' ▾';
-  if(addBtn) addBtn.style.display=currentUser.role==='viewer'||!currentUser.id?'none':'';
+  if(un) un.textContent=(currentUser.name||'未登录')+' ▾';
+  // Hide add button for non-editors and anyone not properly authenticated
+  const canAdd = currentUser.id && currentUser.role==='editor'||currentUser.role==='admin';
+  if(addBtn) addBtn.style.display=canAdd?'':'none';
 }
 
 async function checkPendingApprovals(){
@@ -687,6 +714,66 @@ async function changeUserRole(id,role,name){
   showNotif(`${name} 的权限已更新为：${label[role]||role}`);
   loadAndRenderUsers();
 }
+// ── Show auth overlay in specific state ──
+function showAuthOverlay(state){
+  const overlay = document.getElementById('auth-overlay');
+  if(!overlay) return;
+  overlay.style.display = 'flex';
+
+  // Hide all forms first
+  ['aform-login','aform-reg','aform-pending','aform-nosupabase'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display='none';
+  });
+  const tabs = document.getElementById('auth-tabs');
+  const sub  = document.getElementById('auth-sub-text');
+
+  if(state==='nosupabase'){
+    if(tabs) tabs.style.display='none';
+    if(sub)  sub.textContent='访问受限';
+    const el=document.getElementById('aform-nosupabase'); if(el) el.style.display='';
+  } else if(state==='pending'){
+    if(tabs) tabs.style.display='none';
+    if(sub)  sub.textContent='账号待审批';
+    const el=document.getElementById('aform-pending'); if(el) el.style.display='';
+  } else {
+    // login or reg
+    if(tabs) tabs.style.display='flex';
+    if(sub)  sub.textContent='请登录以继续，账号由管理员审批后生效';
+    authTab(state==='reg'?'reg':'login');
+  }
+}
+
+// ── Admin setup from the locked screen ──
+async function doSetupFromAuthScreen(){
+  const url=(document.getElementById('setup-sb-url').value||'').trim().replace(/\/$/,'');
+  const key=(document.getElementById('setup-sb-key').value||'').trim();
+  const msgEl=document.getElementById('setup-sb-msg');
+  if(!url||!key){
+    if(msgEl) msgEl.innerHTML=`<div class="amsg err" style="margin-top:8px">请填写 Project URL 和 anon key</div>`;
+    return;
+  }
+  const btn=document.getElementById('setup-sb-btn');
+  btn.disabled=true; btn.textContent='连接中…';
+  try{
+    // Test connection
+    const r=await fetch(`${url}/rest/v1/scheduler_data?id=eq.main_data&select=id`,{
+      headers:{'apikey':key,'Authorization':'Bearer '+key}
+    });
+    if(!r.ok&&r.status!==404&&r.status!==200) throw new Error(`连接失败 ${r.status}`);
+    // Save config
+    const local=lsLoad()||{};
+    local._sbUrl=url; local._sbKey=key; local._sbTable='scheduler_data';
+    lsSave(local);
+    _sbUrl=url; _sbKey=key; _sbReady=true;
+    _sb=null; getSB(); // reinitialize
+    if(msgEl) msgEl.innerHTML=`<div class="amsg ok" style="margin-top:8px">✓ 连接成功，正在加载…</div>`;
+    setTimeout(()=>location.reload(), 800);
+  }catch(e){
+    btn.disabled=false; btn.textContent='连接并进入';
+    if(msgEl) msgEl.innerHTML=`<div class="amsg err" style="margin-top:8px">连接失败：${e.message}</div>`;
+  }
+}
+
 // ===================== END AUTH MODULE =====================
 
 let activities=[
@@ -2773,35 +2860,24 @@ async function init(){
   const ld=document.getElementById('cloud-loader');
 
   if(getSB()){
-    // 3a. Supabase configured — check auth
+    // Supabase configured — check if already logged in
     const loggedIn=await checkAuthState();
     if(ld) ld.remove();
     if(!loggedIn){
-      // Show login screen; render app in background with viewer-only access
-      currentUser={id:'',name:'游客',role:'viewer',email:''};
+      // Not logged in — show login screen, block all access
+      currentUser={id:'',name:'',role:'none',email:''};
       updateTopbarUser();
-      renderMain();
-      document.getElementById('auth-overlay').style.display='flex';
+      showAuthOverlay('login');
     }
-    // handleAuthUser() calls renderMain() on successful login
+    // handleAuthUser() will call renderMain() on successful login
   } else {
-    // 3b. No Supabase — local demo mode, admin by default
+    // No Supabase configured in this browser — BLOCK ENTRY entirely
+    // Show a locked screen with admin setup form
     if(ld) ld.remove();
-    currentUser={id:'local',name:'本地用户',role:'admin',email:''};
+    currentUser={id:'',name:'',role:'none',email:''};
     updateTopbarUser();
-    setBarState('local','本地模式 — 配置 Supabase 后可启用真实账号系统');
-    renderMain();
-    setTimeout(()=>showNotif('当前为本地模式，点击底部「存储设置」可接入 Supabase 云端和账号功能'),1200);
+    showAuthOverlay('nosupabase');
   }
-
-  // 4. Reminder for upcoming activities
-  setTimeout(()=>{
-    const soon=activities.filter(a=>{
-      const d=(new Date(a.startTime)-TODAY)/86400000;
-      return d>0&&d<=3;
-    });
-    if(soon.length) showNotif(`提醒：《${soon[0].game}》「${soon[0].name}」将于 ${Math.ceil((new Date(soon[0].startTime)-TODAY)/86400000)} 天后开始`);
-  },1500);
 }
 
 init();
