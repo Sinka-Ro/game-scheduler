@@ -271,14 +271,13 @@ textarea{resize:vertical;min-height:64px}
       <div class="amsg warn" style="margin-top:0">⏳ 您的账号正在等待管理员审批，审批通过后请刷新页面登录。<br><br>如有疑问请联系管理员。</div>
       <button class="abtn" style="margin-top:14px;background:transparent;color:#5046e4;border:1px solid #5046e4" onclick="authLogout()">退出 / 切换账号</button>
     </div>
-    <!-- no-supabase state: shown to users who open the tool before admin configures Supabase -->
+    <!-- no-supabase state: only shown to admin during first-time setup, before URL/key are hardcoded into HTML -->
     <div id="aform-nosupabase" style="display:none">
-      <div class="amsg err" style="margin-top:0;text-align:left">
-        🔒 此工具尚未完成云端配置，暂时无法访问。<br><br>
-        请联系工具管理员完成 Supabase 配置后再访问。
+      <div class="amsg warn" style="margin-top:0;text-align:left">
+        ⚙ 首次配置：请填入 Supabase 信息完成初始化。<br><br>
+        配置成功后，将工具文件里的 <code style="background:#f3f0ff;padding:1px 4px;border-radius:3px">_sbUrl</code> 和 <code style="background:#f3f0ff;padding:1px 4px;border-radius:3px">_sbKey</code> 两行直接写入 HTML 文件并重新部署，之后所有人打开都会直接看到登录界面，不再出现此页面。
       </div>
-      <div style="margin-top:16px;border-top:1px solid #e5e5e3;padding-top:14px">
-        <div style="font-size:11px;color:#9b9b9b;margin-bottom:8px">管理员入口（需持有配置信息）</div>
+      <div style="margin-top:14px">
         <div class="afield"><label class="alabel">Supabase Project URL</label><input class="ainput" id="setup-sb-url" type="text" placeholder="https://xxxx.supabase.co"></div>
         <div class="afield"><label class="alabel">anon public key</label><input class="ainput" id="setup-sb-key" type="text" placeholder="eyJhbGci..."></div>
         <button class="abtn" id="setup-sb-btn" onclick="doSetupFromAuthScreen()" style="margin-top:6px">连接并进入</button>
@@ -486,9 +485,16 @@ let _sb = null; // Supabase client instance
 
 function getSB(){
   if(_sb) return _sb;
-  const cfg=lsLoad();
-  if(cfg&&cfg._sbUrl&&cfg._sbKey&&window.supabase){
-    _sb=window.supabase.createClient(cfg._sbUrl,cfg._sbKey);
+  // Priority 1: hardcoded values in HTML (set by admin before deploying)
+  if(_sbUrl && _sbKey && window.supabase){
+    _sb = window.supabase.createClient(_sbUrl, _sbKey);
+    return _sb;
+  }
+  // Priority 2: localStorage (used during initial setup by admin)
+  const cfg = lsLoad();
+  if(cfg && cfg._sbUrl && cfg._sbKey && window.supabase){
+    _sbUrl = cfg._sbUrl; _sbKey = cfg._sbKey;
+    _sb = window.supabase.createClient(_sbUrl, _sbKey);
   }
   return _sb;
 }
@@ -766,8 +772,12 @@ async function doSetupFromAuthScreen(){
     lsSave(local);
     _sbUrl=url; _sbKey=key; _sbReady=true;
     _sb=null; getSB(); // reinitialize
-    if(msgEl) msgEl.innerHTML=`<div class="amsg ok" style="margin-top:8px">✓ 连接成功，正在加载…</div>`;
-    setTimeout(()=>location.reload(), 800);
+    if(msgEl) msgEl.innerHTML=`<div class="amsg ok" style="margin-top:8px">
+      ✓ 连接成功！正在进入…<br><br>
+      <strong>重要：</strong>请在工具 HTML 文件第 <code>_sbUrl</code> 和 <code>_sbKey</code> 两行填入以下值后重新部署，这样所有人打开后直接看到登录界面：<br>
+      <code style="font-size:10px;word-break:break-all">'${url}'</code>
+    </div>`;
+    setTimeout(()=>location.reload(), 2000);
   }catch(e){
     btn.disabled=false; btn.textContent='连接并进入';
     if(msgEl) msgEl.innerHTML=`<div class="amsg err" style="margin-top:8px">连接失败：${e.message}</div>`;
@@ -832,10 +842,17 @@ const TODAY=new Date(TODAY_STR);
 
 const LS_KEY = 'game_sched_v7';
 let _saveTimer = null;
-let _sbReady = false;      // Supabase ready flag
-let _sbUrl = '';           // Supabase Project URL
-let _sbKey = '';           // Supabase anon key
-let _sbTable = 'scheduler_data';  // table name
+let _sbReady = false;
+
+// ═══════════════════════════════════════════════════════════════
+// ★ 管理员配置区 — 将你的 Supabase 信息填入下方两行
+//   填好后重新上传到 GitHub，所有人打开都会直接看到登录界面
+// ═══════════════════════════════════════════════════════════════
+let _sbUrl   = 'https://uwbqyigkqoqqjjyvwtfd.supabase.co';   // 示例: 'https://abcdefg.supabase.co'
+let _sbKey   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3YnF5aWdrcW9xcWpqeXZ3dGZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTE2NjksImV4cCI6MjA4OTI4NzY2OX0.lczjJH34VFC4Piwe-aQUJh3hsDUq0PuZ9ZS5CxmfPwU';   // 示例: 'eyJhbGci...'（anon public key）
+// ═══════════════════════════════════════════════════════════════
+
+let _sbTable = 'scheduler_data';
 
 // ─── Status Bar ───
 function initStatusBar(){
@@ -2851,28 +2868,24 @@ initStatusBar();
 })();
 
 async function init(){
-  // 1. Load data from localStorage / Supabase
   await loadData();
-
-  // 2. Init Supabase client
-  getSB();
-
+  getSB(); // initialize client
   const ld=document.getElementById('cloud-loader');
 
   if(getSB()){
-    // Supabase configured — check if already logged in
-    const loggedIn=await checkAuthState();
+    // Supabase is configured — check if already logged in
+    const loggedIn = await checkAuthState();
     if(ld) ld.remove();
     if(!loggedIn){
-      // Not logged in — show login screen, block all access
+      // Show login/register screen — all visitors see this, no admin bypass
       currentUser={id:'',name:'',role:'none',email:''};
       updateTopbarUser();
       showAuthOverlay('login');
     }
-    // handleAuthUser() will call renderMain() on successful login
+    // handleAuthUser() calls renderMain() on successful login
   } else {
-    // No Supabase configured in this browser — BLOCK ENTRY entirely
-    // Show a locked screen with admin setup form
+    // Supabase not yet configured in this file
+    // Only the admin who is setting up for the first time should see the setup form
     if(ld) ld.remove();
     currentUser={id:'',name:'',role:'none',email:''};
     updateTopbarUser();
