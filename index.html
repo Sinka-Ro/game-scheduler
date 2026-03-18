@@ -917,8 +917,8 @@ let _sbReady = false;
 // ★ 管理员配置区 — 将你的 Supabase 信息填入下方两行
 //   填好后重新上传到 GitHub，所有人打开都会直接看到登录界面
 // ═══════════════════════════════════════════════════════════════
-let _sbUrl   = 'https://uwbqyigkqoqqjjyvwtfd.supabase.co';   // 示例: 'https://abcdefg.supabase.co'
-let _sbKey   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3YnF5aWdrcW9xcWpqeXZ3dGZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTE2NjksImV4cCI6MjA4OTI4NzY2OX0.lczjJH34VFC4Piwe-aQUJh3hsDUq0PuZ9ZS5CxmfPwU';   // 示例: 'eyJhbGci...'（anon public key）
+let _sbUrl   = '';   // 示例: 'https://abcdefg.supabase.co'
+let _sbKey   = '';   // 示例: 'eyJhbGci...'（anon public key）
 // ═══════════════════════════════════════════════════════════════
 
 let _sbTable = 'scheduler_data';
@@ -2928,34 +2928,40 @@ async function compressImage(file){
     const url = URL.createObjectURL(file);
     img.onload = ()=>{
       URL.revokeObjectURL(url);
-      const TARGET = 100 * 1024; // 100KB
-      // Try quality levels until under target
-      const canvas = document.createElement('canvas');
-      // Scale down if very large — max 1200px on longest side
-      let w = img.width, h = img.height;
-      const maxDim = 1200;
-      if(w > maxDim || h > maxDim){
-        if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
-        else { w = Math.round(w * maxDim / h); h = maxDim; }
-      }
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
+      const TARGET = 10 * 1024; // 10KB target
 
-      // Binary search for quality
-      let lo = 0.1, hi = 0.92, bestBlob = null;
-      const tryQuality = (q) => new Promise(res => canvas.toBlob(res, 'image/jpeg', q));
-      (async ()=>{
-        // First try high quality
-        let blob = await tryQuality(0.85);
-        if(blob && blob.size <= TARGET){ resolve(blob); return; }
-        // Iterate down
-        for(let q = 0.7; q >= 0.1; q -= 0.1){
-          blob = await tryQuality(q);
-          if(blob && blob.size <= TARGET){ resolve(blob); return; }
-          bestBlob = blob;
+      const tryWithDim = (maxDim, quality) => new Promise(res=>{
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
         }
-        resolve(bestBlob); // best effort
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(res, 'image/jpeg', quality);
+      });
+
+      (async ()=>{
+        // Try progressively smaller dimensions + lower quality
+        const attempts = [
+          { maxDim: 800, quality: 0.7 },
+          { maxDim: 600, quality: 0.6 },
+          { maxDim: 480, quality: 0.5 },
+          { maxDim: 360, quality: 0.4 },
+          { maxDim: 320, quality: 0.3 },
+          { maxDim: 240, quality: 0.2 },
+          { maxDim: 200, quality: 0.15 },
+          { maxDim: 160, quality: 0.1 },
+        ];
+        let bestBlob = null;
+        for(const {maxDim, quality} of attempts){
+          const blob = await tryWithDim(maxDim, quality);
+          if(!bestBlob) bestBlob = blob;
+          if(blob && blob.size <= TARGET){ resolve(blob); return; }
+          if(blob && blob.size < (bestBlob?.size||Infinity)) bestBlob = blob;
+        }
+        resolve(bestBlob); // best effort — smallest we could get
       })();
     };
     img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
@@ -3008,7 +3014,7 @@ async function processFiles(files, actId){
           // Save metadata to database (URL, not base64)
           saveAttachmentsFor(actId);
           uploaded++;
-          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至100KB以内）`);
+          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至10KB以内）`);
           continue;
         }catch(e){
           console.warn('Storage upload failed, falling back to base64', e);
