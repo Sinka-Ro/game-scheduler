@@ -11,8 +11,8 @@
   --text:#1a1a1a;--text2:#595959;--text3:#9b9b9b;
   --border:#e5e5e3;--border2:#d0d0ce;
   --primary:#5046e4;--primary-light:#ece9ff;
-  --row-h:32px;--label-w:160px;--day-w:36px;
-  --header-h:30px;--subheader-h:22px;
+  --row-h:32px;--label-w:160px;--day-w:50px;
+  --header-h:30px;--subheader-h:34px;
   --shadow:0 1px 4px rgba(0,0,0,.08);
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;font-size:13px;color:var(--text);background:var(--bg);overflow:hidden;height:100vh;display:flex;flex-direction:column}
@@ -94,7 +94,7 @@ tr:hover td{background:var(--bg2)}
 .week-header-row{height:var(--header-h);display:flex;border-bottom:1px solid var(--border)}
 .week-block{display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);font-weight:600;border-right:1px solid var(--border);background:var(--bg2);flex-shrink:0}
 .day-header-row{height:var(--subheader-h);display:flex}
-.day-hcell{width:var(--day-w);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);border-right:1px solid var(--border);cursor:default}
+.day-hcell{width:var(--day-w);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);border-right:1px solid var(--border);cursor:default;flex-direction:column;gap:1px}
 .day-hcell.weekend{color:#d93025;background:rgba(217,48,37,.04)}
 .day-hcell.today{background:#e8e6ff;color:var(--primary);font-weight:700}
 
@@ -239,14 +239,23 @@ textarea{resize:vertical;min-height:64px}
 .daily-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
 .daily-title{font-size:16px;font-weight:600}
 .daily-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
-.daily-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative}
+.daily-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative}
 .daily-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#5046e4}
 .daily-card.important-card{border-color:#f59e0b;background:#fffdf0}
-.daily-card-num{position:absolute;top:12px;right:14px;font-size:22px;font-weight:700;color:var(--bg3);line-height:1}
+.daily-card-body{padding:14px 16px}
+.daily-card-num{position:absolute;top:10px;right:12px;font-size:20px;font-weight:700;color:rgba(0,0,0,.08);line-height:1;z-index:1}
 .daily-card-meta{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
 .daily-card-name{font-size:14px;font-weight:600;margin-bottom:6px;line-height:1.4}
 .daily-card-detail{font-size:11px;color:var(--text2);line-height:1.7}
 .daily-card-reason{font-size:11px;background:var(--bg2);padding:7px 10px;border-radius:6px;color:var(--text2);margin-top:8px;line-height:1.6;border-left:3px solid #5046e4}
+/* Slideshow */
+.dc-slideshow{width:100%;height:160px;position:relative;overflow:hidden;background:#1a1a2e;flex-shrink:0}
+.dc-slide{position:absolute;inset:0;opacity:0;transition:opacity .5s ease;display:flex;align-items:center;justify-content:center}
+.dc-slide.active{opacity:1}
+.dc-slide img{width:100%;height:100%;object-fit:cover;display:block}
+.dc-dots{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:2}
+.dc-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4);transition:background .3s}
+.dc-dot.active{background:#fff}
 /* Media type grouping */
 .media-type-section{margin-bottom:20px}
 .media-type-hd{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
@@ -313,8 +322,8 @@ textarea{resize:vertical;min-height:64px}
     <div class="nav-tab" onclick="switchTab(this,'stats')">数据统计</div>
     <div class="nav-tab" onclick="switchTab(this,'media')">媒体库</div>
     <div class="nav-tab" onclick="switchTab(this,'daily')">每日推荐</div>
-    <div class="nav-tab" onclick="switchTab(this,'collab')">协作管理</div>
-    <div class="nav-tab" onclick="switchTab(this,'logs')">操作日志</div>
+    <div class="nav-tab" id="collab-tab" onclick="switchTab(this,'collab')" style="display:none">协作管理</div>
+    <div class="nav-tab" id="logs-tab" onclick="switchTab(this,'logs')" style="display:none">操作日志</div>
   </div>
   <div class="topbar-right">
     <button class="btn primary" id="add-btn" onclick="showModal('add')">+ 新增活动</button>
@@ -632,8 +641,13 @@ function updateTopbarUser(){
   if(av) av.textContent=currentUser.name?currentUser.name[0].toUpperCase():'?';
   if(un) un.textContent=(currentUser.name||'未登录')+' ▾';
   // Hide add button for non-editors and anyone not properly authenticated
-  const canAdd = currentUser.id && currentUser.role==='editor'||currentUser.role==='admin';
+  const canAdd = currentUser.id && (currentUser.role==='editor'||currentUser.role==='admin');
   if(addBtn) addBtn.style.display=canAdd?'':'none';
+  // Show logs + collab tabs only for admins
+  const logsTab=document.getElementById('logs-tab');
+  if(logsTab) logsTab.style.display=currentUser.role==='admin'?'':'none';
+  const collabTab=document.getElementById('collab-tab');
+  if(collabTab) collabTab.style.display=currentUser.role==='admin'?'':'none';
 }
 
 async function checkPendingApprovals(){
@@ -1268,8 +1282,14 @@ function renderMain(){
   else if(currentTab==='stats'){renderStatsView(el);}
   else if(currentTab==='media'){renderMediaView(el);}
   else if(currentTab==='daily'){renderDailyView(el);}
-  else if(currentTab==='collab'){renderCollabView(el);}
-  else if(currentTab==='logs'){renderLogsView(el);}
+  else if(currentTab==='collab'){
+    if(currentUser.role==='admin') renderCollabView(el);
+    else { currentTab='calendar'; renderCalendarView(el); }
+  }
+  else if(currentTab==='logs'){
+    if(currentUser.role==='admin') renderLogsView(el);
+    else { currentTab='calendar'; renderCalendarView(el); }
+  }
 }
 
 function switchTab(el,tab){
@@ -1293,7 +1313,7 @@ function renderCalendarView(container){
     const dow=dt.getDay();
     days.push({d,dow,isWe:dow===0||dow===6,isToday:year===TODAY.getFullYear()&&month===TODAY.getMonth()&&d===TODAY.getDate()});
   }
-  const totalW=days.length*36; // var(--day-w)=36px
+  const totalW=days.length*50; // var(--day-w)=50px
 
   // week labels for header
   function buildWeekBlocks(){
@@ -1321,8 +1341,8 @@ function renderCalendarView(container){
     if(s>mEnd||e<mStart)return null;
     const sd=Math.max(1,(s<mStart?1:s.getDate()));
     const ed=Math.min(daysInMonth,(e>mEnd?daysInMonth:e.getDate()));
-    const left=(sd-1)*36;
-    const width=(ed-sd+1)*36-2;
+    const left=(sd-1)*50;
+    const width=(ed-sd+1)*50-2;
     return{left,width};
   }
 
@@ -1418,18 +1438,23 @@ function renderCalendarView(container){
   // Right column header HTML
   let weekHeaderHtml='';
   weekBlocks.forEach(wb=>{
-    weekHeaderHtml+=`<div class="week-block" style="width:${wb.count*36}px">W${wb.wn}</div>`;
+    weekHeaderHtml+=`<div class="week-block" style="width:${wb.count*50}px">W${wb.wn}</div>`;
   });
+  const DOW_EN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let dayHeaderHtml='';
   days.forEach(day=>{
     const cls=(day.isWe?'weekend':'')+(day.isToday?' today':'');
-    dayHeaderHtml+=`<div class="day-hcell ${cls}">${day.d}</div>`;
+    const dowStr=DOW_EN[day.dow];
+    dayHeaderHtml+=`<div class="day-hcell ${cls}" style="flex-direction:column;gap:1px">
+      <span>${day.d}</span>
+      <span style="font-size:9px;opacity:.7">${dowStr}</span>
+    </div>`;
   });
 
   // Right body rows HTML
   let rightBodyHtml='';
   // Today line position
-  const todayPos=TODAY.getFullYear()===year&&TODAY.getMonth()===month?(TODAY.getDate()-1)*36+18:-1;
+  const todayPos=TODAY.getFullYear()===year&&TODAY.getMonth()===month?(TODAY.getDate()-1)*50+25:-1;
 
   rowItems.forEach(item=>{
     if(item.type==='cat'){
@@ -2497,6 +2522,34 @@ function showModal(mode,id){
         <span style="font-size:12px;font-weight:500;color:#713f12">⭐ 标记为重要活动</span>
         <span style="font-size:11px;color:#92400e">（在日历和列表中会突出显示）</span>
       </div>
+      ${mode==='add'?`
+      <div style="border:1px solid #e0e7ff;border-radius:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0f0ff;cursor:pointer" onclick="toggleCyclePanel()">
+          <input type="checkbox" id="f-cycle" style="width:15px;height:15px;cursor:pointer;accent-color:#5046e4" onchange="toggleCyclePanel()">
+          <span style="font-size:12px;font-weight:500;color:#3730a3">🔁 循环创建</span>
+          <span style="font-size:11px;color:#6366f1">勾选后可批量生成多个重复活动</span>
+        </div>
+        <div id="cycle-panel" style="display:none;padding:12px 14px;background:#fff;display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
+            <div class="fg">
+              <div class="flabel">间隔天数</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input id="f-cycle-gap" type="number" min="0" max="365" value="0" style="width:70px;text-align:center" oninput="updateCyclePreview()">
+                <span style="font-size:12px;color:var(--text2)">天（0=每天连续）</span>
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:3px">两次活动之间的间隔天数</div>
+            </div>
+            <div class="fg">
+              <div class="flabel">循环截止日期</div>
+              <input id="f-cycle-until" type="date" oninput="updateCyclePreview()">
+              <div style="font-size:10px;color:var(--text3);margin-top:3px">在此日期前创建，不超过50条</div>
+            </div>
+          </div>
+          <div id="cycle-preview" style="font-size:11px;color:#3730a3;background:#e0e7ff;padding:7px 10px;border-radius:5px">
+            请先填写活动开始/结束时间，再设置循环规则
+          </div>
+        </div>
+      </div>`:''}
       <div style="font-size:11px;color:var(--text3);padding:7px 10px;background:var(--bg2);border-radius:5px">活动ID由系统自动生成 · 录入人/时间自动关联当前账号</div>
     </div>
     <div class="modal-ft">
@@ -2505,6 +2558,38 @@ function showModal(mode,id){
     </div>
   </div>`;
   document.body.appendChild(ov);
+}
+
+function toggleCyclePanel(){
+  const cb=document.getElementById('f-cycle');
+  const panel=document.getElementById('cycle-panel');
+  if(!cb||!panel) return;
+  // clicking the parent div toggles the checkbox
+  if(event&&event.target&&event.target.id!=='f-cycle'){cb.checked=!cb.checked;}
+  panel.style.display=cb.checked?'block':'none';
+  if(cb.checked) updateCyclePreview();
+}
+
+function updateCyclePreview(){
+  const preview=document.getElementById('cycle-preview');
+  if(!preview) return;
+  const sVal=document.getElementById('f-start')?.value.replace('T',' ');
+  const eVal=document.getElementById('f-end')?.value.replace('T',' ');
+  const gap=parseInt(document.getElementById('f-cycle-gap')?.value)||0;
+  const until=document.getElementById('f-cycle-until')?.value;
+  if(!sVal||!eVal||!until){
+    preview.textContent='请填写开始/结束时间及循环截止日期';
+    return;
+  }
+  const sDate=new Date(sVal), eDate=new Date(eVal);
+  if(sDate>=eDate){preview.textContent='开始时间须早于结束时间';return;}
+  const dur=Math.ceil((eDate-sDate)/86400000); // activity duration in days
+  const step=dur+gap+1; // days to shift each cycle: duration + gap days
+  const untilDate=new Date(until+'T23:59:59');
+  let count=0, cur=new Date(sDate);
+  while(cur<=untilDate&&count<50){count++;cur=new Date(cur.getTime()+step*86400000);}
+  const gapDesc=gap===0?'每天连续开启':`每次间隔 ${gap} 天`;
+  preview.innerHTML=`🔁 ${gapDesc}，每次活动持续 <strong>${dur}</strong> 天，截止 ${until} 共创建 <strong>${count}</strong> 条活动`;
 }
 
 function saveActivity(){
@@ -2525,26 +2610,77 @@ function saveActivity(){
   if(!s||!e){showNotif('时间不能为空',true);return}
   if(new Date(s)>new Date(e)){showNotif('结束时间不能早于开始时间，请修改',true);return}
   if(!channels.length){showNotif('请至少选择一个活动渠道',true);return}
+
   const now=ts();
+  const gc={'王者荣耀':'WZRY','和平精英':'HPJY','原神':'YS','明日方舟':'MRF','崩坏：星穹铁道':'BHXQTD','第五人格':'DWRG','蛋仔派对':'DZPD'};
+  const tc={'充值返利':'RECHARGE','版本更新':'UPDATE','节日活动':'EVENT','赛事活动':'ESPORTS','福利发放':'WELFARE','跨界联动':'COLLAB','新服开放':'NEWSVR','限时折扣':'DISCOUNT'};
+
   if(editingId){
+    // Edit mode — single update
     const idx=activities.findIndex(a=>a.id===editingId);
     if(idx>=0){
       activities[idx]={...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,modifier:currentUser.name,modifyTime:now};
       addLog(`修改了《${g}》${n}`);
       showNotif(`修改成功：${n}`);
     }
+    closeModal();renderMain();
+    return;
+  }
+
+  // Check cycle mode
+  const cycleOn = document.getElementById('f-cycle')?.checked;
+  const gap     = parseInt(document.getElementById('f-cycle-gap')?.value)||0;
+  const until   = document.getElementById('f-cycle-until')?.value;
+
+  if(cycleOn && until){
+    // Batch cycle creation
+    const sDate    = new Date(s);
+    const eDate    = new Date(e);
+    const dur      = Math.ceil((eDate-sDate)/86400000);
+    const step     = dur+gap+1; // days per cycle
+    const untilDate= new Date(until+'T23:59:59');
+    const phOffset = ph ? (new Date(s)-new Date(ph)) : null; // preheat offset in ms
+
+    // Helper: add days to a datetime string "YYYY-MM-DD HH:MM"
+    function shiftDateStr(dateStr, daysOffset){
+      if(!dateStr) return dateStr;
+      const d=new Date(dateStr);
+      d.setDate(d.getDate()+daysOffset);
+      const pad=v=>String(v).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    let created=0, curShift=0;
+    const newItems=[];
+    while(true){
+      const cycleStart=new Date(sDate.getTime()+curShift*86400000);
+      if(cycleStart>untilDate || created>=50) break;
+      const dc=cycleStart.toISOString().split('T')[0].replace(/-/g,'');
+      const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+newItems.length+1).padStart(3,'0');
+      const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
+      const newStart=shiftDateStr(s, curShift);
+      const newEnd  =shiftDateStr(e, curShift);
+      const newPh   =ph&&phOffset!==null ? shiftDateStr(ph, curShift) : ph;
+      newItems.push({id:newId,game:g,type:t,name:n,startTime:newStart,endTime:newEnd,preheat:newPh,channels,goals,intensity,rules,note,source:src,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
+      created++;
+      curShift+=step;
+    }
+    // Insert all at front
+    activities.unshift(...newItems.reverse());
+    addLog(`循环创建了 ${created} 条《${g}》${t} · ${n}（间隔${gap}天）`);
+    showNotif(`循环创建成功：共生成 ${created} 条活动`);
   } else {
-    const gc={'王者荣耀':'WZRY','和平精英':'HPJY','原神':'YS','明日方舟':'MRF','崩坏：星穹铁道':'BHXQTD','第五人格':'DWRG','蛋仔派对':'DZPD'};
-    const tc={'充值返利':'RECHARGE','版本更新':'UPDATE','节日活动':'EVENT','赛事活动':'ESPORTS','福利发放':'WELFARE','跨界联动':'COLLAB','新服开放':'NEWSVR','限时折扣':'DISCOUNT'};
+    // Single creation
     const dc=s.split(' ')[0].replace(/-/g,'');
     const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+1).padStart(3,'0');
     const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
     activities.unshift({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
     addLog(`新增了《${g}》${n}`);
     showNotif(`新增成功：《${g}》${t} · ${n}`);
-    calGame=g;currentTab='calendar';
-    document.querySelectorAll('.nav-tab').forEach((tb,i)=>tb.classList.toggle('active',i===1));
   }
+
+  calGame=g;currentTab='calendar';
+  document.querySelectorAll('.nav-tab').forEach((tb,i)=>tb.classList.toggle('active',i===1));
   closeModal();renderMain();
 }
 
@@ -2996,15 +3132,10 @@ function renderDailyView(container){
   const upcoming= activities.filter(a=>new Date(a.startTime)>now);
   const ended   = activities.filter(a=>new Date(a.endTime)<now);
 
-  // Weighted pool: active > upcoming > ended; important items always included first
   const important = [...active,...upcoming,...ended].filter(a=>a.important);
   const rest      = [...active,...upcoming,...ended].filter(a=>!a.important);
-
-  // Shuffle helper
-  const shuffle = arr => [...arr].sort(()=>Math.random()-.5);
-
-  // Pick up to 6: important ones first, fill rest randomly
-  const picked = [...shuffle(important), ...shuffle(rest)].slice(0,6);
+  const shuffle   = arr=>[...arr].sort(()=>Math.random()-.5);
+  const picked    = [...shuffle(important),...shuffle(rest)].slice(0,6);
 
   if(!picked.length){
     container.innerHTML=`<div class="daily-view"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text3);gap:12px">
@@ -3015,7 +3146,6 @@ function renderDailyView(container){
     return;
   }
 
-  // Reason labels by status
   function getReason(a){
     const s=new Date(a.startTime),e=new Date(a.endTime);
     const dStart=Math.ceil((s-now)/86400000);
@@ -3031,23 +3161,46 @@ function renderDailyView(container){
     return '📌 近期活动，建议追踪';
   }
 
+  // Get up to 3 image attachments for an activity
+  function getImages(actId){
+    return (attachments[actId]||[]).filter(att=>att.type==='image').slice(0,3);
+  }
+
   const cards=picked.map((a,i)=>{
     const st=getStatus(a);
     const c=TYPE_COLORS[a.type]||{bg:'#f3f4f6',text:'#6b7280',border:'#d1d5db'};
+    const imgs=getImages(a.id);
+    const ssId=`ss-${a.id}-${i}`;
+
+    // Slideshow HTML — only render if there are images
+    const slideshowHtml = imgs.length>0 ? `
+      <div class="dc-slideshow" id="${ssId}">
+        ${imgs.map((img,si)=>`
+          <div class="dc-slide${si===0?' active':''}" data-idx="${si}">
+            <img src="${img.data}" alt="${img.name}" loading="lazy">
+          </div>`).join('')}
+        ${imgs.length>1?`<div class="dc-dots">
+          ${imgs.map((_,si)=>`<div class="dc-dot${si===0?' active':''}" data-ss="${ssId}" data-idx="${si}"></div>`).join('')}
+        </div>`:''}
+      </div>` : '';
+
     return`<div class="daily-card ${a.important?'important-card':''}" onclick="showDetail('${a.id}')">
-      <div class="daily-card-num">${i+1}</div>
-      <div class="daily-card-meta">
-        <span class="tag" style="background:${c.bg};color:${c.text}">${a.type}</span>
-        <span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span>
-        <span style="font-size:10px;color:var(--text3)">${a.game}</span>
+      ${slideshowHtml}
+      <div class="daily-card-body">
+        <div class="daily-card-num">${i+1}</div>
+        <div class="daily-card-meta">
+          <span class="tag" style="background:${c.bg};color:${c.text}">${a.type}</span>
+          <span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span>
+          <span style="font-size:10px;color:var(--text3)">${a.game}</span>
+        </div>
+        <div class="daily-card-name">${a.important?'⭐ ':''}${a.name}</div>
+        <div class="daily-card-detail">
+          <span>📅 ${a.startTime.split(' ')[0]} ~ ${a.endTime.split(' ')[0]}</span>
+          ${a.intensity?`&nbsp;·&nbsp;<span>💪 ${a.intensity}</span>`:''}
+          ${a.channels?.length?`&nbsp;·&nbsp;<span>📡 ${a.channels.join('/')}</span>`:''}
+        </div>
+        <div class="daily-card-reason">${getReason(a)}</div>
       </div>
-      <div class="daily-card-name">${a.important?'⭐ ':''}${a.name}</div>
-      <div class="daily-card-detail">
-        <span>📅 ${a.startTime.split(' ')[0]} ~ ${a.endTime.split(' ')[0]}</span>
-        ${a.intensity?`&nbsp;·&nbsp;<span>💪 ${a.intensity}</span>`:''}
-        ${a.channels?.length?`&nbsp;·&nbsp;<span>📡 ${a.channels.join('/')}</span>`:''}
-      </div>
-      <div class="daily-card-reason">${getReason(a)}</div>
     </div>`;
   }).join('');
 
@@ -3067,6 +3220,25 @@ function renderDailyView(container){
     </div>
     <div class="daily-grid">${cards}</div>
   </div>`;
+
+  // Start auto-slideshows for cards that have images
+  picked.forEach((a,i)=>{
+    const imgs=getImages(a.id);
+    if(imgs.length<=1) return;
+    const ssId=`ss-${a.id}-${i}`;
+    let cur=0;
+    const timer=setInterval(()=>{
+      const ss=document.getElementById(ssId);
+      if(!ss){ clearInterval(timer); return; } // card removed
+      const slides=ss.querySelectorAll('.dc-slide');
+      const dots=ss.querySelectorAll('.dc-dot');
+      slides[cur].classList.remove('active');
+      dots[cur]?.classList.remove('active');
+      cur=(cur+1)%slides.length;
+      slides[cur].classList.add('active');
+      dots[cur]?.classList.add('active');
+    }, 3000);
+  });
 }
 // ===================== END DAILY RECOMMENDATIONS =====================
 
