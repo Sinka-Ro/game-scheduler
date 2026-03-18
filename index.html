@@ -1016,6 +1016,17 @@ function persistSnapshotToLocal(snapshot){
   lsSave(local);
 }
 
+function stageLatestLocalSnapshot(){
+  const snapshot = buildSnapshot();
+  const rev = getSnapshotRevision(snapshot);
+  persistSnapshotToLocal(snapshot);
+  _lastLocalSaveRev = rev;
+  _syncLastMainRev = Math.max(_syncLastMainRev, rev);
+  _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+  updateBarTs();
+  return snapshot;
+}
+
 function updateSyncMarkers(snapshot){
   _syncLastMainRev = Math.max(_syncLastMainRev, getSnapshotRevision(snapshot));
   _syncLastAttachmentSig = getAttachmentsSignature(attachments);
@@ -1403,11 +1414,18 @@ async function loadData(){
         const cloudRev = getSnapshotRevision(cloud);
         if(!localRev || cloudRev >= localRev) applySnapshot(cloud);
       }
-      await sbReadAttachments().catch(e=>console.warn('Attachment load failed',e));
       _sbReady = true;
       if(cloud) persistSnapshotToLocal(cloud);
       updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
+      sbReadAttachments().then(()=>{
+        const latest = lsLoad() || {};
+        latest._attachments = attachments;
+        if(cloud) latest._snapshot = cloud;
+        lsSave(latest);
+        _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+        if(currentUser.id) renderMain();
+      }).catch(e=>console.warn('Attachment load failed',e));
     }catch(e){
       console.warn('Supabase load failed',e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
@@ -2917,6 +2935,31 @@ function refreshCatPanel(){
   }
 }
 
+function ensureGameTypeVisible(game, type){
+  if(!game || !type) return;
+  if(!GAME_CATS[game]) GAME_CATS[game] = [];
+
+  const exists = (GAME_CATS[game] || []).some(cat =>
+    (cat.rows || []).some(row =>
+      row.label === type || (Array.isArray(row.types) && row.types.includes(type))
+    )
+  );
+  if(exists) return;
+
+  let fallbackIdx = (GAME_CATS[game] || []).findIndex(cat => cat.cat === '未分组活动');
+  if(fallbackIdx < 0){
+    GAME_CATS[game].push({cat:'未分组活动', rows:[]});
+    fallbackIdx = GAME_CATS[game].length - 1;
+
+    const cc = GAME_CAT_COLORS[game] || [];
+    const ct = GAME_CAT_TEXT[game] || [];
+    GAME_CAT_COLORS[game] = [...cc, '#f3f4f6'];
+    GAME_CAT_TEXT[game] = [...ct, '#6b7280'];
+  }
+
+  GAME_CATS[game][fallbackIdx].rows.push({label:type, types:[type]});
+}
+
 // ===================== LOGS =====================
 function renderLogsView(container){
   container.innerHTML=`<div style="padding:20px;overflow-y:auto;height:100%">
@@ -2937,6 +2980,8 @@ function showModal(mode,id){
   const a=id?activities.find(x=>x.id===id):null;
   editingId=id||null;
   const v=(f,d='')=>a?(a[f]||d):d;
+  const selectedGame = a?.game || calGame;
+  const selectedType = a?.type || ACT_TYPES[0] || '';
   const ov=document.createElement('div');
   ov.className='modal-overlay';ov.id='modal-overlay';
   ov.innerHTML=`<div class="modal">
@@ -2947,9 +2992,9 @@ function showModal(mode,id){
     <div class="modal-body">
       <div class="form-grid">
         <div class="fg"><div class="flabel">竞品游戏 <span class="req">*</span></div>
-          <select id="f-game">${GAMES.map(g=>`<option ${v('game')===g?'selected':''}>${g}</option>`).join('')}</select></div>
+          <select id="f-game">${GAMES.map(g=>`<option ${selectedGame===g?'selected':''}>${g}</option>`).join('')}</select></div>
         <div class="fg"><div class="flabel">活动类型 <span class="req">*</span></div>
-          <select id="f-type">${ACT_TYPES.map(t=>`<option ${v('type')===t?'selected':''}>${t}</option>`).join('')}</select></div>
+          <select id="f-type">${ACT_TYPES.map(t=>`<option ${selectedType===t?'selected':''}>${t}</option>`).join('')}</select></div>
       </div>
       <div class="fg full"><div class="flabel">活动名称 <span class="req">*</span></div>
         <input id="f-name" type="text" placeholder="如：王者荣耀3月充值返利" value="${v('name')}"></div>
@@ -3079,10 +3124,14 @@ function saveActivity(){
     // Edit mode — single update
     const idx=activities.findIndex(a=>a.id===editingId);
     if(idx>=0){
+      ensureGameTypeVisible(g, t);
       activities[idx]={...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,modifier:currentUser.name,modifyTime:now};
       addLog(`修改了《${g}》${n}`);
       showNotif(`修改成功：${n}`);
     }
+    stageLatestLocalSnapshot();
+    activeGameFilter='all';
+    activeTypeFilter='all';
     closeModal();renderMain();
     return;
   }
@@ -3094,6 +3143,7 @@ function saveActivity(){
 
   if(cycleOn && until){
     // Batch cycle creation
+    ensureGameTypeVisible(g, t);
     const sDate    = new Date(s);
     const eDate    = new Date(e);
     const dur      = Math.ceil((eDate-sDate)/86400000);
@@ -3131,6 +3181,7 @@ function saveActivity(){
     showNotif(`循环创建成功：共生成 ${created} 条活动`);
   } else {
     // Single creation
+    ensureGameTypeVisible(g, t);
     const dc=s.split(' ')[0].replace(/-/g,'');
     const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+1).padStart(3,'0');
     const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
@@ -3139,6 +3190,9 @@ function saveActivity(){
     showNotif(`新增成功：《${g}》${t} · ${n}`);
   }
 
+  stageLatestLocalSnapshot();
+  activeGameFilter='all';
+  activeTypeFilter='all';
   calGame=g;currentTab='calendar';
   document.querySelectorAll('.nav-tab').forEach((tb,i)=>tb.classList.toggle('active',i===1));
   closeModal();renderMain();
