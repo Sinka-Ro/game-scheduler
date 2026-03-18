@@ -2928,7 +2928,7 @@ async function compressImage(file){
     const url = URL.createObjectURL(file);
     img.onload = ()=>{
       URL.revokeObjectURL(url);
-      const TARGET = 50 * 1024; // 50KB target
+      const TARGET = 80 * 1024; // 80KB target
 
       const tryWithDim = (maxDim, quality) => new Promise(res=>{
         const canvas = document.createElement('canvas');
@@ -3014,7 +3014,7 @@ async function processFiles(files, actId){
           // Save metadata to database (URL, not base64)
           saveAttachmentsFor(actId);
           uploaded++;
-          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至50KB以内）`);
+          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至80KB以内）`);
           continue;
         }catch(e){
           console.warn('Storage upload failed, falling back to base64', e);
