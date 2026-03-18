@@ -234,32 +234,22 @@ textarea{resize:vertical;min-height:64px}
 .rb-editor{background:#dbeafe;color:#1d4ed8}
 .rb-viewer{background:#f3f4f6;color:#6b7280}
 .rb-pending{background:#fffbeb;color:#713f12}
-/* ── AI Assistant ── */
-.ai-view{display:flex;height:100%;overflow:hidden;background:var(--bg2)}
-.ai-left{width:300px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
-.ai-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.ai-section-hd{padding:12px 16px;font-size:12px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:space-between}
-.ai-rec-list{flex:1;overflow-y:auto;padding:12px}
-.ai-rec-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:border-color .15s}
-.ai-rec-card:hover{border-color:#5046e4}
-.ai-rec-tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500;margin-bottom:6px}
-.ai-rec-title{font-size:13px;font-weight:500;margin-bottom:5px;line-height:1.4}
-.ai-rec-insight{font-size:11px;color:var(--text2);line-height:1.6}
-.ai-chat{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.ai-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
-.ai-msg{max-width:82%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.65}
-.ai-msg.user{background:#5046e4;color:#fff;align-self:flex-end;border-bottom-right-radius:3px}
-.ai-msg.assistant{background:var(--bg);border:1px solid var(--border);color:var(--text);align-self:flex-start;border-bottom-left-radius:3px}
-.ai-msg.loading{background:var(--bg2);border:1px solid var(--border);color:var(--text3);align-self:flex-start}
-.ai-input-row{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;background:var(--bg)}
-.ai-input{flex:1;padding:9px 12px;border:1px solid var(--border2);border-radius:8px;font-size:13px;outline:none;font-family:inherit;resize:none;height:40px;overflow:hidden}
-.ai-input:focus{border-color:#5046e4;box-shadow:0 0 0 3px rgba(80,70,228,.08)}
-.ai-send{padding:8px 16px;background:#5046e4;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap}
-.ai-send:hover{background:#3d34c8}
-.ai-send:disabled{background:#c7c4f0;cursor:not-allowed}
-.ai-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:8px;padding:20px}
-.ai-suggestion{display:inline-block;padding:5px 12px;border:1px solid var(--border2);border-radius:20px;font-size:12px;cursor:pointer;margin:3px;color:var(--text2)}
-.ai-suggestion:hover{background:var(--bg2);border-color:#5046e4;color:#5046e4}
+/* ── Daily Recommendations ── */
+.daily-view{padding:20px;overflow-y:auto;height:100%}
+.daily-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.daily-title{font-size:16px;font-weight:600}
+.daily-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.daily-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative}
+.daily-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#5046e4}
+.daily-card.important-card{border-color:#f59e0b;background:#fffdf0}
+.daily-card-num{position:absolute;top:12px;right:14px;font-size:22px;font-weight:700;color:var(--bg3);line-height:1}
+.daily-card-meta{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.daily-card-name{font-size:14px;font-weight:600;margin-bottom:6px;line-height:1.4}
+.daily-card-detail{font-size:11px;color:var(--text2);line-height:1.7}
+.daily-card-reason{font-size:11px;background:var(--bg2);padding:7px 10px;border-radius:6px;color:var(--text2);margin-top:8px;line-height:1.6;border-left:3px solid #5046e4}
+/* Media type grouping */
+.media-type-section{margin-bottom:20px}
+.media-type-hd{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
 </style>
 </head>
 <body>
@@ -322,7 +312,7 @@ textarea{resize:vertical;min-height:64px}
     <div class="nav-tab active" onclick="switchTab(this,'calendar')">排期日历</div>
     <div class="nav-tab" onclick="switchTab(this,'stats')">数据统计</div>
     <div class="nav-tab" onclick="switchTab(this,'media')">媒体库</div>
-    <div class="nav-tab" onclick="switchTab(this,'ai')">✦ AI 助手</div>
+    <div class="nav-tab" onclick="switchTab(this,'daily')">每日推荐</div>
     <div class="nav-tab" onclick="switchTab(this,'collab')">协作管理</div>
     <div class="nav-tab" onclick="switchTab(this,'logs')">操作日志</div>
   </div>
@@ -1277,7 +1267,7 @@ function renderMain(){
   else if(currentTab==='list'){renderListView(el);}
   else if(currentTab==='stats'){renderStatsView(el);}
   else if(currentTab==='media'){renderMediaView(el);}
-  else if(currentTab==='ai'){renderAIView(el);}
+  else if(currentTab==='daily'){renderDailyView(el);}
   else if(currentTab==='collab'){renderCollabView(el);}
   else if(currentTab==='logs'){renderLogsView(el);}
 }
@@ -1463,8 +1453,10 @@ function renderCalendarView(container){
         if(geom){
           const c=TYPE_COLORS[act.type]||{bg:'#e5e7eb',text:'#374151',border:'#9ca3af'};
           const escaped=act.name.replace(/'/g,"\\'");
-          bars+=`<div class="act-bar" style="left:${geom.left}px;width:${geom.width}px;background:${c.bg};color:${c.text};border:1px solid ${c.border}" 
-            onmouseenter="showTip(event,'${act.id}')" onmouseleave="hideTip()" onclick="showDetail('${act.id}')">${act.name}</div>`;
+          const starMark=act.important?'⭐ ':'';
+          const importantStyle=act.important?`box-shadow:0 0 0 2px #f59e0b;font-weight:600;`:'';
+          bars+=`<div class="act-bar" style="left:${geom.left}px;width:${geom.width}px;background:${c.bg};color:${c.text};border:1px solid ${c.border};${importantStyle}" 
+            onmouseenter="showTip(event,'${act.id}')" onmouseleave="hideTip()" onclick="showDetail('${act.id}')">${starMark}${act.name}</div>`;
         }
         // preheat bar
         if(act.preheat){
@@ -1658,10 +1650,11 @@ function refreshTable(){
   if(!list.length){tb.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">暂无符合条件的活动记录</td></tr>`;return;}
   tb.innerHTML=list.map(a=>{
     const st=getStatus(a);
-    return`<tr>
+    const starBadge=a.important?`<span title="重要活动" style="color:#f59e0b;margin-right:4px;font-size:13px">⭐</span>`:'';
+    return`<tr ${a.important?'style="background:#fffdf0"':''}>
       <td style="font-weight:500">${a.game}</td>
       <td>${typeTag(a.type)}</td>
-      <td title="${a.name}">${a.name}</td>
+      <td title="${a.name}">${starBadge}${a.name}</td>
       <td><span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span></td>
       <td style="font-size:11px">${a.startTime.split(' ')[0]}</td>
       <td style="font-size:11px">${a.endTime.split(' ')[0]}</td>
@@ -1670,6 +1663,7 @@ function refreshTable(){
       <td>
         <button class="btn sm" onclick="showDetail('${a.id}')">详情</button>
         ${canEdit?`<button class="btn sm" onclick="showModal('edit','${a.id}')" style="margin-left:3px">编辑</button>`:''}
+        ${canEdit?`<button class="btn sm" onclick="copyActivity('${a.id}')" style="margin-left:3px" title="复制此活动">复制</button>`:''}
         ${canDel?`<button class="btn sm danger" onclick="confirmDelete('${a.id}')" style="margin-left:3px">删除</button>`:''}
       </td>
     </tr>`;
@@ -2498,6 +2492,11 @@ function showModal(mode,id){
         <textarea id="f-rules">${v('rules')}</textarea></div>
       <div class="fg full"><div class="flabel">备注</div>
         <textarea id="f-note" style="min-height:48px">${v('note')}</textarea></div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;cursor:pointer" onclick="document.getElementById('f-important').click()">
+        <input type="checkbox" id="f-important" ${v('important')?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:#f59e0b">
+        <span style="font-size:12px;font-weight:500;color:#713f12">⭐ 标记为重要活动</span>
+        <span style="font-size:11px;color:#92400e">（在日历和列表中会突出显示）</span>
+      </div>
       <div style="font-size:11px;color:var(--text3);padding:7px 10px;background:var(--bg2);border-radius:5px">活动ID由系统自动生成 · 录入人/时间自动关联当前账号</div>
     </div>
     <div class="modal-ft">
@@ -2521,6 +2520,7 @@ function saveActivity(){
   const intensity=document.getElementById('f-intensity').value;
   const rules=document.getElementById('f-rules').value;
   const note=document.getElementById('f-note').value;
+  const important=document.getElementById('f-important').checked;
   if(!n){showNotif('活动名称不能为空',true);return}
   if(!s||!e){showNotif('时间不能为空',true);return}
   if(new Date(s)>new Date(e)){showNotif('结束时间不能早于开始时间，请修改',true);return}
@@ -2529,7 +2529,7 @@ function saveActivity(){
   if(editingId){
     const idx=activities.findIndex(a=>a.id===editingId);
     if(idx>=0){
-      activities[idx]={...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,modifier:currentUser.name,modifyTime:now};
+      activities[idx]={...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,modifier:currentUser.name,modifyTime:now};
       addLog(`修改了《${g}》${n}`);
       showNotif(`修改成功：${n}`);
     }
@@ -2539,7 +2539,7 @@ function saveActivity(){
     const dc=s.split(' ')[0].replace(/-/g,'');
     const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+1).padStart(3,'0');
     const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
-    activities.unshift({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
+    activities.unshift({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
     addLog(`新增了《${g}》${n}`);
     showNotif(`新增成功：《${g}》${t} · ${n}`);
     calGame=g;currentTab='calendar';
@@ -2566,8 +2566,8 @@ function showDetail(id){
   ov.innerHTML=`<div class="modal" style="width:720px">
     <div class="modal-hd">
       <div>
-        <div class="modal-title">${a.name}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.id}</div>
+        <div class="modal-title">${a.important?'⭐ ':''}${a.name}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.id}${a.important?'&nbsp;&nbsp;<span style="background:#fef9c3;color:#713f12;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:500">重要活动</span>':''}</div>
       </div>
       <button class="close-x" onclick="closeModal()">×</button>
     </div>
@@ -2619,7 +2619,9 @@ function showDetail(id){
       <div style="font-size:11px;color:var(--text3);padding-top:8px;border-top:1px solid var(--border)">最后修改：${a.modifier} · ${a.modifyTime}</div>
     </div>
     <div class="modal-ft">
+      ${canEdit&&currentUser.role==='admin'?`<button class="btn danger" style="margin-right:auto" onclick="closeModal();confirmDelete('${a.id}')">删除</button>`:''}
       <button class="btn" onclick="closeModal()">关闭</button>
+      ${canEdit?`<button class="btn" onclick="closeModal();copyActivity('${a.id}')">复制活动</button>`:''}
       ${canEdit?`<button class="btn primary" onclick="closeModal();showModal('edit','${a.id}')">编辑</button>`:''}
     </div>
   </div>`;
@@ -2781,59 +2783,78 @@ function _renderLightbox(){
 
 // ─── Media Library View ───
 function renderMediaView(container){
-  // collect all attachments, grouped by game
   const allGames=['all',...GAMES];
-  const filtered=mediaGame==='all'
-    ? Object.entries(attachments)
-    : Object.entries(attachments).filter(([actId])=>{
-        const act=activities.find(a=>a.id===actId);
-        return act&&act.game===mediaGame;
-      });
 
-  // Flatten all items with activity info
-  const items=[];
-  filtered.forEach(([actId,atts])=>{
-    const act=activities.find(a=>a.id===actId);
-    atts.forEach(att=>items.push({att,act,actId}));
-  });
-
-  // Sort newest first
-  items.sort((a,b)=>b.att.addedAt>a.att.addedAt?1:-1);
-
-  const gameCounts={all:0};
-  GAMES.forEach(g=>{gameCounts[g]=0});
+  // Build items list
+  const allItems=[];
   Object.entries(attachments).forEach(([actId,atts])=>{
     const act=activities.find(a=>a.id===actId);
-    if(act){ gameCounts[act.game]=(gameCounts[act.game]||0)+atts.length; gameCounts.all+=atts.length; }
+    atts.forEach(att=>allItems.push({att,act,actId}));
   });
 
+  // Filter by selected game
+  const filteredItems = mediaGame==='all'
+    ? allItems
+    : allItems.filter(({act})=>act&&act.game===mediaGame);
+
+  // Count per game
+  const gameCounts={all:allItems.length};
+  GAMES.forEach(g=>{gameCounts[g]=allItems.filter(({act})=>act&&act.game===g).length;});
+
   const tabs=allGames.map(g=>`<div class="media-game-tab ${mediaGame===g?'active':''}" onclick="mediaGame='${g}';renderMain()">${g==='all'?'全部游戏':g} <span style="opacity:.7">${gameCounts[g]||0}</span></div>`).join('');
+
+  // Group by activity type
+  const typeGroups={};
+  filteredItems.forEach(item=>{
+    const typeName = item.act ? item.act.type : '未知类型';
+    if(!typeGroups[typeName]) typeGroups[typeName]=[];
+    typeGroups[typeName].push(item);
+  });
+  // Sort types by ACT_TYPES order
+  const sortedTypes = [...ACT_TYPES.filter(t=>typeGroups[t]), ...Object.keys(typeGroups).filter(t=>!ACT_TYPES.includes(t))];
+
+  const mediaCardHtml = ({att,act,actId}) => `
+    <div class="media-card" onclick="openLightboxFromMedia('${actId}','${att.id}')">
+      ${att.type==='image'
+        ?`<img class="media-thumb" src="${att.data}" alt="${att.name}" loading="lazy">`
+        :`<div class="media-thumb-video">${att.type==='video_url'?'🔗':'▶'}</div>`}
+      <div class="media-card-body">
+        <div class="media-card-name" title="${att.name}">${att.name}</div>
+        <div class="media-card-meta">${act?act.name:'未知活动'}</div>
+        <div class="media-card-meta">${att.addedBy} · ${att.addedAt.split(' ')[0]}</div>
+      </div>
+    </div>`;
+
+  const groupedHtml = filteredItems.length===0
+    ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:12px;padding:40px">
+        <div style="font-size:40px">🖼</div>
+        <div style="font-size:14px">暂无媒体文件</div>
+        <div style="font-size:12px">在活动详情页上传图片或视频后，会在这里汇总显示</div>
+      </div>`
+    : `<div style="padding:16px;overflow-y:auto;flex:1">
+        ${sortedTypes.map(type=>{
+          const c=TYPE_COLORS[type]||{bg:'#f3f4f6',text:'#6b7280'};
+          const items=typeGroups[type];
+          return `<div class="media-type-section">
+            <div class="media-type-hd">
+              <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c.bg};border:1px solid ${c.border||c.bg}"></span>
+              ${type}
+              <span style="font-weight:400;color:var(--text3)">${items.length} 个文件</span>
+            </div>
+            <div class="media-grid" style="padding:0">
+              ${items.map(mediaCardHtml).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
 
   container.innerHTML=`<div class="media-view">
     <div class="media-toolbar">
       <div style="font-size:13px;font-weight:600">媒体库</div>
       <div class="media-game-tabs">${tabs}</div>
-      <div style="margin-left:auto;font-size:11px;color:var(--text3)">${items.length} 个文件</div>
+      <div style="margin-left:auto;font-size:11px;color:var(--text3)">${filteredItems.length} 个文件</div>
     </div>
-    ${items.length===0
-      ?`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:12px">
-          <div style="font-size:40px">🖼</div>
-          <div style="font-size:14px">暂无媒体文件</div>
-          <div style="font-size:12px">在活动详情页上传图片或视频后，会在这里汇总显示</div>
-        </div>`
-      :`<div class="media-grid">
-        ${items.map(({att,act,actId})=>`
-          <div class="media-card" onclick="openLightboxFromMedia('${actId}','${att.id}')">
-            ${att.type==='image'
-              ?`<img class="media-thumb" src="${att.data}" alt="${att.name}" loading="lazy">`
-              :`<div class="media-thumb-video">${att.type==='video_url'?'🔗':'▶'}</div>`}
-            <div class="media-card-body">
-              <div class="media-card-name" title="${att.name}">${att.name}</div>
-              <div class="media-card-meta">${act?act.name:'未知活动'}</div>
-              <div class="media-card-meta">${act?act.game:''} · ${att.addedBy}</div>
-            </div>
-          </div>`).join('')}
-      </div>`}
+    ${groupedHtml}
   </div>`;
 }
 
@@ -2899,275 +2920,155 @@ function showUserMenu(){
   document.body.appendChild(ov);
 }
 
-// ===================== AI ASSISTANT =====================
-let aiMessages = []; // chat history
-let aiDailyRecs = null; // cached daily recommendations
-let aiLoading = false;
 
-// Build context snapshot for AI — summarize current data concisely
-function buildAIContext(){
-  const now = TODAY;
-  const active = activities.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now);
-  const upcoming = activities.filter(a=>new Date(a.startTime)>now).sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
-  const recent = activities.filter(a=>new Date(a.endTime)<now).sort((a,b)=>new Date(b.endTime)-new Date(a.endTime)).slice(0,10);
-
-  const gameSummary = GAMES.map(g=>{
-    const acts = activities.filter(a=>a.game===g);
-    const activeActs = acts.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now);
-    return `${g}：共${acts.length}条活动，当前进行中${activeActs.length}条`;
-  }).join('；');
-
-  const typeSummary = ACT_TYPES.map(t=>{
-    const n = activities.filter(a=>a.type===t).length;
-    return `${t}(${n}条)`;
-  }).join('、');
-
-  const activeDetail = active.slice(0,15).map(a=>
-    `[${a.game}·${a.type}] ${a.name}，${a.startTime.split(' ')[0]}~${a.endTime.split(' ')[0]}，渠道:${a.channels.join('/')}${a.intensity?'，力度:'+a.intensity:''}${a.goals?.length?'，目标:'+a.goals.join('/'):''}${a.rules?'，规则:'+a.rules.slice(0,60):''}`
-  ).join('\n');
-
-  const upcomingDetail = upcoming.slice(0,10).map(a=>
-    `[${a.game}·${a.type}] ${a.name}，${a.startTime.split(' ')[0]}开始${a.preheat?'（预热'+a.preheat.split(' ')[0]+'）':''}`
-  ).join('\n');
-
-  return `你是一个专业的游戏运营分析助手，正在帮助分析竞品游戏运营活动排期数据。
-
-【当前数据概览】
-- 今日日期：${TODAY_STR}
-- 竞品游戏：${GAMES.join('、')}
-- 活动类型：${typeSummary}
-- 各游戏活动量：${gameSummary}
-- 当前进行中活动共 ${active.length} 条，即将开始活动共 ${upcoming.length} 条
-
-【当前进行中的活动（最多15条）】
-${activeDetail || '无'}
-
-【即将开始的活动（最多10条）】
-${upcomingDetail || '无'}
-
-请基于以上真实数据回答用户的问题。回答要简洁专业，适当给出分析洞察。如果问题超出数据范围，请如实说明。`;
-}
-
-// Call Anthropic API
-async function callClaude(userMsg, systemPrompt){
-  // Use the built-in Anthropic API proxy — no API key needed,
-  // authentication is handled by the hosting environment.
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [
-        ...aiMessages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .slice(-10),
-        {role: 'user', content: userMsg}
-      ]
-    })
-  });
-  if(!resp.ok){
-    const errText = await resp.text().catch(()=>'');
-    throw new Error(`API 错误 ${resp.status}${errText ? '：' + errText.slice(0,100) : ''}`);
-  }
-  const data = await resp.json();
-  if(data.error) throw new Error(data.error.message);
-  return data.content?.find(b=>b.type==='text')?.text || '抱歉，未能获取回答';
-}
-
-// ── Render AI View ──
-function renderAIView(container){
-  container.innerHTML=`<div class="ai-view">
-    <!-- Left: Daily Recommendations -->
-    <div class="ai-left">
-      <div class="ai-section-hd">
-        <span>✦ 每日活动推荐</span>
-        <button class="btn sm" id="rec-refresh-btn" onclick="loadDailyRecs()" style="font-size:10px;padding:2px 8px">刷新</button>
+// ===================== COPY ACTIVITY =====================
+function copyActivity(id){
+  const a=activities.find(x=>x.id===id);
+  if(!a){showNotif('活动不存在',true);return;}
+  // Pre-fill form with copied data, new ID will be generated on save
+  editingId=null;
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  const v=(f,d='')=>a[f]!==undefined?a[f]:d;
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-hd">
+      <div>
+        <div class="modal-title">复制活动</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">基于「${a.name}」创建副本，修改后保存</div>
       </div>
-      <div class="ai-rec-list" id="ai-rec-list">
-        <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">
-          <div style="font-size:24px;margin-bottom:8px">✦</div>
-          <div>正在生成今日推荐…</div>
-        </div>
-      </div>
+      <button class="close-x" onclick="closeModal()">×</button>
     </div>
-    <!-- Right: Q&A Chat -->
-    <div class="ai-right">
-      <div class="ai-section-hd">
-        <span>💬 数据问答</span>
-        <span style="font-size:10px;color:var(--text3);font-weight:400">基于工具内的活动数据回答问题</span>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">竞品游戏 <span class="req">*</span></div>
+          <select id="f-game">${GAMES.map(g=>`<option ${v('game')===g?'selected':''}>${g}</option>`).join('')}</select></div>
+        <div class="fg"><div class="flabel">活动类型 <span class="req">*</span></div>
+          <select id="f-type">${ACT_TYPES.map(t=>`<option ${v('type')===t?'selected':''}>${t}</option>`).join('')}</select></div>
       </div>
-      <div class="ai-chat">
-        <div class="ai-messages" id="ai-messages">
-          <div class="ai-empty">
-            <div style="font-size:22px">💬</div>
-            <div style="font-size:13px;font-weight:500">问我关于竞品活动的任何问题</div>
-            <div style="font-size:11px;margin-bottom:10px">我会根据工具内的真实数据回答</div>
-            <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:400px">
-              ${['哪款游戏活动最多？','本月有哪些充值返利活动？','王者荣耀近期有什么大活动？','哪些活动快结束了？','各游戏活动力度怎么样？','最近有哪些跨界联动？'].map(q=>
-                `<span class="ai-suggestion" onclick="sendAIQuestion('${q}')">${q}</span>`
-              ).join('')}
-            </div>
-          </div>
-        </div>
-        <div class="ai-input-row">
-          <textarea class="ai-input" id="ai-input" placeholder="输入问题，如：王者荣耀本月有哪些活动？" rows="1"
-            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAIMessage()}"
-            oninput="this.style.height='40px';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
-          <button class="ai-send" id="ai-send-btn" onclick="sendAIMessage()">发送</button>
-        </div>
+      <div class="fg full"><div class="flabel">活动名称 <span class="req">*</span></div>
+        <input id="f-name" type="text" value="${v('name')} (副本)"></div>
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">开始时间 <span class="req">*</span></div>
+          <input id="f-start" type="datetime-local" value="${v('startTime','').replace(' ','T')}"></div>
+        <div class="fg"><div class="flabel">结束时间 <span class="req">*</span></div>
+          <input id="f-end" type="datetime-local" value="${v('endTime','').replace(' ','T')}"></div>
       </div>
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">预热时间（可选）</div>
+          <input id="f-preheat" type="datetime-local" value="${v('preheat','').replace(' ','T')}"></div>
+        <div class="fg"><div class="flabel">数据来源 <span class="req">*</span></div>
+          <select id="f-source">${SOURCES.map(s=>`<option ${v('source')===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">活动渠道（Ctrl多选）<span class="req">*</span></div>
+          <select id="f-channels" multiple style="height:72px">${CHANNELS.map(c=>`<option ${v('channels',[]).includes(c)?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="fg"><div class="flabel">活动目标（Ctrl多选）</div>
+          <select id="f-goals" multiple style="height:72px">${TARGETS.map(t=>`<option ${v('goals',[]).includes(t)?'selected':''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div class="fg full"><div class="flabel">活动力度</div>
+        <input id="f-intensity" type="text" value="${v('intensity')}"></div>
+      <div class="fg full"><div class="flabel">活动规则简述</div>
+        <textarea id="f-rules">${v('rules')}</textarea></div>
+      <div class="fg full"><div class="flabel">备注</div>
+        <textarea id="f-note" style="min-height:48px">${v('note')}</textarea></div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;cursor:pointer" onclick="document.getElementById('f-important').click()">
+        <input type="checkbox" id="f-important" ${v('important')?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:#f59e0b">
+        <span style="font-size:12px;font-weight:500;color:#713f12">⭐ 标记为重要活动</span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);padding:7px 10px;background:var(--bg2);border-radius:5px">保存后将生成新的活动ID · 请修改时间避免与原活动冲突</div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="saveActivity()">保存副本</button>
     </div>
   </div>`;
-
-  // Load recommendations
-  if(aiDailyRecs){
-    renderRecs(aiDailyRecs);
-  } else {
-    loadDailyRecs();
-  }
-
-  // Restore chat history
-  if(aiMessages.length > 0){
-    const msgContainer = document.getElementById('ai-messages');
-    if(msgContainer){
-      msgContainer.innerHTML = '';
-      aiMessages.forEach(m=>{
-        if(m.role !== 'system') appendMessage(m.role, m.content);
-      });
-    }
-  }
+  document.body.appendChild(ov);
 }
 
-// ── Daily Recommendations ──
-async function loadDailyRecs(){
-  const btn = document.getElementById('rec-refresh-btn');
-  const list = document.getElementById('ai-rec-list');
-  if(!list) return;
-  if(btn) btn.disabled = true;
-  list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px"><div style="font-size:20px;margin-bottom:8px;animation:spin .8s linear infinite;display:inline-block">◌</div><br>AI 正在分析中…</div>`;
+// ===================== DAILY RECOMMENDATIONS =====================
+// 每次进入「每日推荐」Tab，从活动库随机抽6条展示
+// 抽取策略：优先当前进行中 + 即将开始的活动，以重要活动优先
+function renderDailyView(container){
+  const now=TODAY;
 
-  const prompt = buildAIContext();
-  const today = TODAY_STR;
-  const userMsg = `今天是${today}。请基于以上竞品活动数据，给运营分析师推荐今天值得重点关注的3~4个活动，每个推荐包含：
-1. 活动名称和所属游戏
-2. 推荐理由（为什么今天特别值得关注）
-3. 一条专业洞察或行动建议（如：可以参考这个活动的力度设计竞品方案）
+  // Pool: active + upcoming, important first, then shuffle rest
+  const active  = activities.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now);
+  const upcoming= activities.filter(a=>new Date(a.startTime)>now);
+  const ended   = activities.filter(a=>new Date(a.endTime)<now);
 
-请以JSON格式返回，格式：
-[{"game":"游戏名","type":"活动类型","name":"活动名","reason":"推荐理由","insight":"洞察建议","tag":"今日开始/即将结束/高价值参考/竞争激烈","tagColor":"#dc2626或#d97706或#5046e4或#059669"}]
-只返回JSON数组，不要其他文字。`;
+  // Weighted pool: active > upcoming > ended; important items always included first
+  const important = [...active,...upcoming,...ended].filter(a=>a.important);
+  const rest      = [...active,...upcoming,...ended].filter(a=>!a.important);
 
-  try{
-    const result = await callClaude(userMsg, prompt);
-    const clean = result.replace(/```json|```/g,'').trim();
-    const recs = JSON.parse(clean);
-    aiDailyRecs = recs;
-    renderRecs(recs);
-  }catch(e){
-    console.warn('AI rec error', e);
-    if(list) list.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--text3)">
-      <div style="color:#d93025;margin-bottom:8px">⚠ 推荐生成失败</div>
-      <div>${e.message}</div>
-      <div style="margin-top:8px;font-size:11px">请确认工具已接入 Anthropic API</div>
-    </div>`;
-  }
-  if(btn) btn.disabled = false;
-}
+  // Shuffle helper
+  const shuffle = arr => [...arr].sort(()=>Math.random()-.5);
 
-function renderRecs(recs){
-  const list = document.getElementById('ai-rec-list');
-  if(!list) return;
-  if(!recs || !recs.length){
-    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">暂无推荐数据</div>`;
+  // Pick up to 6: important ones first, fill rest randomly
+  const picked = [...shuffle(important), ...shuffle(rest)].slice(0,6);
+
+  if(!picked.length){
+    container.innerHTML=`<div class="daily-view"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text3);gap:12px">
+      <div style="font-size:40px">📋</div>
+      <div style="font-size:14px">暂无活动数据</div>
+      <div style="font-size:12px">先在「活动列表」录入活动，再来查看每日推荐</div>
+    </div></div>`;
     return;
   }
-  list.innerHTML = recs.map((r,i)=>`
-    <div class="ai-rec-card" onclick="sendAIQuestion('告诉我更多关于${r.name}的信息')">
-      <div>
-        <span class="ai-rec-tag" style="background:${r.tagColor||'#5046e4'}22;color:${r.tagColor||'#5046e4'}">${r.tag||'推荐关注'}</span>
-        <span style="font-size:10px;color:var(--text3);margin-left:6px">${r.game} · ${r.type}</span>
-      </div>
-      <div class="ai-rec-title">${r.name}</div>
-      <div class="ai-rec-insight" style="margin-bottom:5px;color:var(--text2)">${r.reason}</div>
-      <div class="ai-rec-insight" style="background:var(--bg2);padding:6px 8px;border-radius:5px;border-left:2px solid ${r.tagColor||'#5046e4'}">
-        💡 ${r.insight}
-      </div>
-    </div>`).join('') + `<div style="font-size:10px;color:var(--text3);text-align:center;padding:6px 0">${TODAY_STR} 每日推荐 · 点击卡片可继续追问</div>`;
-}
 
-// ── Q&A Chat ──
-function appendMessage(role, content){
-  const container = document.getElementById('ai-messages');
-  if(!container) return;
-  // Remove empty state if present
-  const empty = container.querySelector('.ai-empty');
-  if(empty) empty.remove();
-
-  const div = document.createElement('div');
-  div.className = `ai-msg ${role}`;
-  // Simple markdown: bold, line breaks
-  div.innerHTML = content
-    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-    .replace(/\n/g,'<br>');
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-  return div;
-}
-
-function sendAIQuestion(q){
-  const input = document.getElementById('ai-input');
-  if(input){ input.value = q; input.style.height = '40px'; }
-  sendAIMessage();
-}
-
-async function sendAIMessage(){
-  if(aiLoading) return;
-  const input = document.getElementById('ai-input');
-  if(!input) return;
-  const text = input.value.trim();
-  if(!text) return;
-
-  aiLoading = true;
-  input.value = ''; input.style.height = '40px';
-  const sendBtn = document.getElementById('ai-send-btn');
-  if(sendBtn) sendBtn.disabled = true;
-
-  // Add user message to UI and history
-  appendMessage('user', text);
-  aiMessages.push({role:'user', content:text});
-
-  // Loading indicator
-  const loadingDiv = appendMessage('assistant', '▋');
-  if(loadingDiv) loadingDiv.classList.add('loading');
-
-  try{
-    const systemPrompt = buildAIContext();
-    const reply = await callClaude(text, systemPrompt);
-
-    // Replace loading with actual reply
-    if(loadingDiv){ loadingDiv.remove(); }
-    appendMessage('assistant', reply);
-    aiMessages.push({role:'assistant', content:reply});
-
-    // Keep history to last 20 messages
-    if(aiMessages.length > 20) aiMessages = aiMessages.slice(-20);
-
-  }catch(e){
-    if(loadingDiv){ loadingDiv.remove(); }
-    appendMessage('assistant', `⚠ 请求失败：${e.message}\n\n请确认 Anthropic API 已接入（工具使用 Claude Sonnet 模型）。`);
+  // Reason labels by status
+  function getReason(a){
+    const s=new Date(a.startTime),e=new Date(a.endTime);
+    const dStart=Math.ceil((s-now)/86400000);
+    const dEnd  =Math.ceil((e-now)/86400000);
+    if(a.important) return '⭐ 重要活动，值得重点关注';
+    if(s<=now&&e>=now){
+      if(dEnd<=2) return `🔴 活动即将结束，仅剩 ${dEnd} 天`;
+      if(dEnd<=7) return `🟡 活动进行中，还有 ${dEnd} 天结束`;
+      return '🟢 活动进行中';
+    }
+    if(dStart<=3) return `🔵 即将在 ${dStart} 天后开始${a.preheat?'，预热已启动':''}`;
+    if(dStart<=7) return `⏳ 本周开始，提前关注`;
+    return '📌 近期活动，建议追踪';
   }
 
-  aiLoading = false;
-  if(sendBtn) sendBtn.disabled = false;
-  if(input) input.focus();
+  const cards=picked.map((a,i)=>{
+    const st=getStatus(a);
+    const c=TYPE_COLORS[a.type]||{bg:'#f3f4f6',text:'#6b7280',border:'#d1d5db'};
+    return`<div class="daily-card ${a.important?'important-card':''}" onclick="showDetail('${a.id}')">
+      <div class="daily-card-num">${i+1}</div>
+      <div class="daily-card-meta">
+        <span class="tag" style="background:${c.bg};color:${c.text}">${a.type}</span>
+        <span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span>
+        <span style="font-size:10px;color:var(--text3)">${a.game}</span>
+      </div>
+      <div class="daily-card-name">${a.important?'⭐ ':''}${a.name}</div>
+      <div class="daily-card-detail">
+        <span>📅 ${a.startTime.split(' ')[0]} ~ ${a.endTime.split(' ')[0]}</span>
+        ${a.intensity?`&nbsp;·&nbsp;<span>💪 ${a.intensity}</span>`:''}
+        ${a.channels?.length?`&nbsp;·&nbsp;<span>📡 ${a.channels.join('/')}</span>`:''}
+      </div>
+      <div class="daily-card-reason">${getReason(a)}</div>
+    </div>`;
+  }).join('');
+
+  const importantCount=activities.filter(a=>a.important).length;
+
+  container.innerHTML=`<div class="daily-view">
+    <div class="daily-header">
+      <div>
+        <div class="daily-title">📋 每日活动推荐</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">
+          从 ${activities.length} 条活动中随机抽选 ${picked.length} 条
+          ${importantCount?`，其中 ${importantCount} 条重要活动优先展示`:''}
+          · 每次切换标签页会重新随机
+        </div>
+      </div>
+      <button class="btn primary" onclick="renderMain()" style="font-size:12px">🔀 换一批</button>
+    </div>
+    <div class="daily-grid">${cards}</div>
+  </div>`;
 }
-// ===================== END AI ASSISTANT =====================
+// ===================== END DAILY RECOMMENDATIONS =====================
 
 // ===================== INIT =====================
 initStatusBar();
