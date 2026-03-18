@@ -1147,7 +1147,7 @@ async function doConnectCloud(){
     }).then(r=>{ if(!r.ok&&r.status!==404) throw new Error(`连接测试失败 ${r.status}`); });
 
     // Save current data to cloud
-    await sbUpsert(buildSnapshot());
+    await sbUpsertRow('main_data', buildSnapshot());
     _sbReady=true;
     _sb=null; // force re-init so auth module uses new config
     getSB();  // re-initialize with new URL/key
