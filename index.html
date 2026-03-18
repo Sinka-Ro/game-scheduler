@@ -1584,13 +1584,6 @@ function renderCalendarView(container){
     }
   });
 
-  // Legend
-  const usedTypes=[...new Set(gameActs.map(a=>a.type))];
-  const legendHtml=usedTypes.map(t=>{
-    const c=TYPE_COLORS[t]||{bg:'#e5e7eb',text:'#374151'};
-    return`<div class="legend-item"><div class="legend-swatch" style="background:${c.bg};border:1px solid ${c.border||c.bg}"></div>${t}</div>`;
-  }).join('');
-
   container.innerHTML=`
   <div class="cal-view">
     <div class="cal-toolbar">
@@ -1619,7 +1612,6 @@ function renderCalendarView(container){
         </div>
       </div>
     </div>
-    <div class="legend-strip">${legendHtml||'<span style="color:var(--text3);font-size:11px">暂无活动数据，点击右上角「+新增」添加活动</span>'}</div>
   </div>`;
 
   // sync scroll between left and right
