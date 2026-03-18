@@ -527,6 +527,18 @@ let mediaGame='all';
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
+const CLOUD_SYNC_POLL_MS = 5000;
+let _clientId = '';
+let _syncChannel = null;
+let _syncPollTimer = null;
+let _syncReloadTimer = null;
+let _syncBusy = false;
+let _syncLastMainRev = 0;
+let _syncLastAttachmentSig = '';
+let _lastLocalSaveRev = 0;
+let _lastLocalAttachmentSig = '';
+let _syncDeferred = false;
+let _syncVisibilityBound = false;
 
 function getSB(){
   if(_sb) return _sb;
@@ -605,6 +617,7 @@ async function authRegister(){
 }
 
 async function authLogout(){
+  stopCloudSync();
   const sb=getSB();
   if(sb) await sb.auth.signOut().catch(()=>{});
   currentUser={id:'',name:'',role:'none',email:''};
@@ -634,6 +647,7 @@ async function handleAuthUser(user){
   updateTopbarUser();
   addLog('登录系统');
   renderMain();
+  startCloudSync();
   if(prof.role==='admin') checkPendingApprovals();
   // Upcoming activity reminder
   setTimeout(()=>{
@@ -817,9 +831,7 @@ async function doSetupFromAuthScreen(){
     });
     if(!r.ok&&r.status!==404&&r.status!==200) throw new Error(`连接失败 ${r.status}`);
     // Save config
-    const local=lsLoad()||{};
-    local._sbUrl=url; local._sbKey=key; local._sbTable='scheduler_data';
-    lsSave(local);
+    persistCloudConfig(url, key, 'scheduler_data');
     _sbUrl=url; _sbKey=key; _sbReady=true;
     _sb=null; getSB(); // reinitialize
     if(msgEl) msgEl.innerHTML=`<div class="amsg ok" style="margin-top:8px">
@@ -961,14 +973,323 @@ function updateBarTs(){ const el=document.getElementById('sbar-ts'); if(el) el.t
 function lsSave(d){ try{ localStorage.setItem(LS_KEY,JSON.stringify(d)); }catch(e){} }
 function lsLoad(){ try{ const r=localStorage.getItem(LS_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
 
+function getClientId(){
+  if(_clientId) return _clientId;
+  const local = lsLoad() || {};
+  if(local._clientId){
+    _clientId = local._clientId;
+    return _clientId;
+  }
+  _clientId = `client_${Math.random().toString(36).slice(2,10)}_${Date.now().toString(36)}`;
+  local._clientId = _clientId;
+  lsSave(local);
+  return _clientId;
+}
+
+function getSnapshotRevision(d){
+  const rev = Number(d?._meta?.revision || d?.savedAtMs || 0);
+  if(Number.isFinite(rev) && rev > 0) return rev;
+  const parsed = d?.savedAt ? Date.parse(String(d.savedAt).replace(' ','T')) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getAttachmentsSignature(src){
+  const obj = src || {};
+  return Object.keys(obj).sort().map(actId=>{
+    const arr = Array.isArray(obj[actId]) ? obj[actId] : [];
+    const items = arr.map(att=>[
+      att.id || '',
+      att.type || '',
+      att.name || '',
+      att.addedAt || '',
+      att.size || 0,
+      String(att.data || '').length
+    ].join(':')).join(',');
+    return `${actId}[${items}]`;
+  }).join('|');
+}
+
+function persistSnapshotToLocal(snapshot){
+  const local = lsLoad() || {};
+  local._snapshot = snapshot;
+  local._attachments = attachments;
+  lsSave(local);
+}
+
+function updateSyncMarkers(snapshot){
+  _syncLastMainRev = Math.max(_syncLastMainRev, getSnapshotRevision(snapshot));
+  _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+}
+
+function shouldDelayCloudApply(){
+  return !!document.getElementById('modal-overlay') || !!_saveTimer;
+}
+
+async function refreshCloudState(opts){
+  const options = opts || {};
+  if(!_sbReady || !_sbUrl || !_sbKey) return false;
+  if(_syncBusy) return false;
+  if(shouldDelayCloudApply() && !options.force){
+    const alreadyDeferred = _syncDeferred;
+    _syncDeferred = true;
+    if(options.notify !== false && !alreadyDeferred){
+      showNotif(document.getElementById('modal-overlay')
+        ? '检测到团队更新，关闭当前弹窗后会自动刷新'
+        : '检测到团队更新，当前修改保存后会自动刷新');
+    }
+    return false;
+  }
+  _syncBusy = true;
+  try{
+    const cloud = await sbReadRow('main_data');
+    if(!cloud) return false;
+    await sbReadAttachments();
+    const nextRev = getSnapshotRevision(cloud);
+    const nextAttSig = getAttachmentsSignature(attachments);
+    const changed = !!options.force || nextRev > _syncLastMainRev || nextAttSig !== _syncLastAttachmentSig;
+    if(!changed) return false;
+    const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
+    const ownAttachmentWrite = nextAttSig && nextAttSig === _lastLocalAttachmentSig;
+    applySnapshot(cloud);
+    persistSnapshotToLocal(cloud);
+    _syncLastMainRev = nextRev;
+    _syncLastAttachmentSig = nextAttSig;
+    updateTopbarUser();
+    if(currentUser.id) renderMain();
+    updateBarTs();
+    setBarState('cloud', ownMainWrite || ownAttachmentWrite ? '云端已连接（Supabase）' : `已接收团队更新 · ${ts()}`);
+    if(options.notify !== false && !ownMainWrite && !ownAttachmentWrite){
+      showNotif(options.message || '检测到团队更新，页面已自动刷新');
+    }
+    return true;
+  }catch(e){
+    console.warn('Cloud refresh failed', e);
+    if(options.reportError) setBarState('error', `云端同步检查失败：${e.message}`);
+    return false;
+  }finally{
+    _syncBusy = false;
+  }
+}
+
+function scheduleCloudRefresh(reason, opts){
+  const options = opts || {};
+  if(!_sbReady || !_sbUrl || !_sbKey) return;
+  if(_syncReloadTimer) clearTimeout(_syncReloadTimer);
+  _syncReloadTimer = setTimeout(()=>{
+    refreshCloudState({
+      force: !!options.force,
+      notify: options.notify,
+      message: options.message,
+      reportError: !!options.reportError,
+      reason
+    });
+  }, reason === 'poll' ? 0 : 250);
+}
+
+function flushDeferredCloudRefresh(){
+  if(!_syncDeferred) return;
+  _syncDeferred = false;
+  scheduleCloudRefresh('deferred', { notify:true, message:'已应用团队刚刚的更新' });
+}
+
+function stopCloudSync(){
+  if(_syncReloadTimer){ clearTimeout(_syncReloadTimer); _syncReloadTimer = null; }
+  if(_syncPollTimer){ clearInterval(_syncPollTimer); _syncPollTimer = null; }
+  const sb = getSB();
+  if(_syncChannel && sb && sb.removeChannel){
+    try{ sb.removeChannel(_syncChannel); }catch(e){}
+  }
+  _syncChannel = null;
+}
+
+function startCloudSync(){
+  if(!_sbReady || !_sbUrl || !_sbKey || !currentUser.id) return;
+  stopCloudSync();
+  const local = lsLoad() || {};
+  if(local._snapshot) _syncLastMainRev = getSnapshotRevision(local._snapshot);
+  _syncLastAttachmentSig = getAttachmentsSignature(local._attachments || attachments);
+  const sb = getSB();
+  if(sb && sb.channel){
+    try{
+      _syncChannel = sb.channel(`scheduler-sync-${getClientId()}`).on('postgres_changes',{
+        event:'*',
+        schema:'public',
+        table:_sbTable
+      }, payload=>{
+        const rowId = payload?.new?.id || payload?.old?.id || '';
+        if(rowId === 'main_data' || String(rowId).startsWith('att_')){
+          scheduleCloudRefresh('realtime', { notify:true });
+        }
+      }).subscribe(status=>{
+        if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
+          console.warn('Realtime subscription status', status);
+        }
+      });
+    }catch(e){
+      console.warn('Start realtime sync failed', e);
+    }
+  }
+  _syncPollTimer = setInterval(()=>{
+    if(document.hidden) return;
+    scheduleCloudRefresh('poll', { notify:false });
+  }, CLOUD_SYNC_POLL_MS);
+  if(!_syncVisibilityBound){
+    document.addEventListener('visibilitychange', ()=>{
+      if(!document.hidden) scheduleCloudRefresh('focus', { notify:false });
+    });
+    _syncVisibilityBound = true;
+  }
+  scheduleCloudRefresh('sync-start', { notify:false });
+}
+
+function persistCloudConfig(url,key,table){
+  const local = lsLoad() || {};
+  local._sbUrl = (url || '').trim().replace(/\/$/,'');
+  local._sbKey = (key || '').trim();
+  local._sbTable = (table || 'scheduler_data').trim() || 'scheduler_data';
+  lsSave(local);
+  return local;
+}
+
+function encodeCloudShareConfig(url,key,table){
+  try{
+    return btoa(JSON.stringify({
+      u:(url || '').trim().replace(/\/$/,''),
+      k:(key || '').trim(),
+      t:(table || 'scheduler_data').trim() || 'scheduler_data'
+    })).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }catch(e){
+    console.warn('Encode cloud share config failed', e);
+    return '';
+  }
+}
+
+function decodeCloudShareConfig(raw){
+  try{
+    if(!raw) return null;
+    const normalized = String(raw).replace(/-/g,'+').replace(/_/g,'/');
+    const pad = '='.repeat((4 - normalized.length % 4) % 4);
+    const cfg = JSON.parse(atob(normalized + pad));
+    const url = (cfg.u || cfg.url || '').trim().replace(/\/$/,'');
+    const key = (cfg.k || cfg.key || '').trim();
+    const table = (cfg.t || cfg.table || 'scheduler_data').trim() || 'scheduler_data';
+    if(!url || !key) return null;
+    return {_sbUrl:url,_sbKey:key,_sbTable:table};
+  }catch(e){
+    console.warn('Decode cloud share config failed', e);
+    return null;
+  }
+}
+
+function stripCloudConfigFromLocation(){
+  try{
+    const url = new URL(window.location.href);
+    let changed = false;
+    if(url.searchParams.has('cloud')){
+      url.searchParams.delete('cloud');
+      changed = true;
+    }
+    if((url.hash || '').startsWith('#cloud=')){
+      url.hash = '';
+      changed = true;
+    }
+    if(changed && window.history && window.history.replaceState){
+      window.history.replaceState(null, '', url.toString());
+    }
+  }catch(e){}
+}
+
+function getCloudConfigFromLocation(){
+  try{
+    const url = new URL(window.location.href);
+    const queryCfg = decodeCloudShareConfig(url.searchParams.get('cloud') || '');
+    if(queryCfg) return queryCfg;
+    if((url.hash || '').startsWith('#cloud=')){
+      return decodeCloudShareConfig(url.hash.slice(7));
+    }
+  }catch(e){}
+  return null;
+}
+
+function buildCollabShareUrl(url,key,table){
+  const token = encodeCloudShareConfig(url,key,table);
+  if(!token) return '';
+  try{
+    const shareUrl = new URL(window.location.href);
+    shareUrl.searchParams.delete('cloud');
+    shareUrl.hash = `cloud=${token}`;
+    return shareUrl.toString();
+  }catch(e){
+    return `${window.location.href.split('#')[0]}#cloud=${token}`;
+  }
+}
+
+async function copyText(text){
+  if(!text) return false;
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(e){}
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly','readonly');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try{ ok = document.execCommand('copy'); }catch(e){}
+  ta.remove();
+  return ok;
+}
+
+async function copyCollabLink(){
+  const input = document.getElementById('sb-share-url');
+  const text = (input && input.value) || buildCollabShareUrl(_sbUrl,_sbKey,_sbTable);
+  const ok = await copyText(text);
+  showNotif(ok ? '已复制协作链接，发给成员即可开始多人协作' : '复制失败，请手动复制链接', !ok);
+}
+
+function showCollabShareDialog(shareUrl){
+  if(!shareUrl) return;
+  closeModal();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'modal-overlay';
+  ov.innerHTML = `<div class="confirm-box" style="width:620px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:10px">多人协作链接已生成</div>
+    <div class="confirm-desc" style="text-align:left;line-height:1.7;margin-bottom:12px;color:#6b7280">
+      请把下面的链接发给团队成员。成员首次通过该链接打开页面后，会自动写入同一套 Supabase 配置，之后他们的编辑内容也会上传到同一个云端。
+    </div>
+    <textarea id="sb-share-url" readonly style="width:100%;min-height:108px;padding:10px 12px;border:1px solid #d0d7de;border-radius:8px;font-size:12px;line-height:1.6;resize:vertical;background:#f8fafc">${shareUrl}</textarea>
+    <div style="font-size:11px;color:#9b9b9b;line-height:1.6;margin-top:8px">
+      提示：链接中包含 Supabase 的 anon public key，这是前端公开 key，可以分享给团队成员；请不要混用管理员自己的本地链接和普通页面地址。
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" onclick="closeModal()">稍后再说</button>
+      <button class="btn primary" onclick="copyCollabLink()">复制协作链接</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{
+    const el = document.getElementById('sb-share-url');
+    if(el){ el.focus(); el.select(); }
+  }, 50);
+}
+
 // ─── Snapshot ───
 function buildSnapshot(){
   // Attachments saved separately — keep main snapshot small
+  const revision = Date.now();
   return { activities, GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300), calGame, calYear, calMonth,
            reports, REPORT_TAGS, REPORT_TAG_COLORS,
-           savedAt:ts() };
+           savedAt:ts(), savedAtMs:revision,
+           _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
 }
 
 function applySnapshot(d){
@@ -1021,16 +1342,22 @@ async function sbReadAttachments(){
   const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
   });
-  if(!r.ok) return;
+  if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
   const rows = await r.json();
-  if(!rows||!rows.length) return;
+  const nextAttachments = {};
+  if(!rows||!rows.length){
+    attachments = nextAttachments;
+    return { items: attachments, signature:'' };
+  }
   rows.forEach(row=>{
     try{
       const actId = row.id.slice(4); // strip "att_" prefix
       const atts  = JSON.parse(row.payload);
-      if(Array.isArray(atts)&&atts.length) attachments[actId]=atts;
+      if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
     }catch(e){}
   });
+  attachments = nextAttachments;
+  return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
 async function sbSaveAttachments(actId){
@@ -1048,7 +1375,12 @@ async function sbSaveAttachments(actId){
 
 // ─── Load ───
 async function loadData(){
-  const local = lsLoad();
+  let local = lsLoad();
+  const sharedCfg = getCloudConfigFromLocation();
+  if(sharedCfg){
+    local = persistCloudConfig(sharedCfg._sbUrl, sharedCfg._sbKey, sharedCfg._sbTable);
+    stripCloudConfigFromLocation();
+  }
   if(local && local._snapshot)    applySnapshot(local._snapshot);
   if(local && local._attachments) Object.assign(attachments, local._attachments);
 
@@ -1067,11 +1399,14 @@ async function loadData(){
     try{
       const cloud = await sbReadRow('main_data');
       if(cloud && cloud.savedAt){
-        const localTs = local?._snapshot?.savedAt||'';
-        if(!localTs || cloud.savedAt >= localTs) applySnapshot(cloud);
+        const localRev = getSnapshotRevision(local?._snapshot);
+        const cloudRev = getSnapshotRevision(cloud);
+        if(!localRev || cloudRev >= localRev) applySnapshot(cloud);
       }
-      sbReadAttachments().catch(e=>console.warn('Attachment load failed',e));
+      await sbReadAttachments().catch(e=>console.warn('Attachment load failed',e));
       _sbReady = true;
+      if(cloud) persistSnapshotToLocal(cloud);
+      updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
     }catch(e){
       console.warn('Supabase load failed',e);
@@ -1100,39 +1435,50 @@ async function saveAttachmentsFor(actId){
   local._attachments = attachments;
   lsSave(local);
   if(_sbReady && _sbUrl && _sbKey){
+    _lastLocalAttachmentSig = getAttachmentsSignature(attachments);
     sbSaveAttachments(actId).catch(e=>{
       console.warn('Attachment sync failed',e);
       showNotif(`附件云端同步失败（本地已保存）: ${e.message}`,true);
+    }).finally(()=>{
+      _syncLastAttachmentSig = _lastLocalAttachmentSig;
     });
   }
 }
 
 async function _doSave(){
+  _saveTimer = null;
   const snapshot = buildSnapshot(); // main data only, no attachments
+  _lastLocalSaveRev = getSnapshotRevision(snapshot);
+  let savedToCloud = false;
 
   // Always save locally first
-  const local = lsLoad()||{};
-  local._snapshot    = snapshot;
-  local._attachments = attachments;
-  lsSave(local);
+  persistSnapshotToLocal(snapshot);
   updateBarTs();
 
   if(!_sbReady||!_sbUrl||!_sbKey){ setBarState('local'); return; }
   setBarState('saving');
   try{
     await sbUpsertRow('main_data', snapshot);
+    savedToCloud = true;
+    _syncLastMainRev = _lastLocalSaveRev;
+    _syncLastAttachmentSig = getAttachmentsSignature(attachments);
     setBarState('saved',`已同步到云端 · ${ts()}`);
   }catch(e){
     console.warn('Supabase save failed',e);
     setBarState('error',`云端同步失败（本地已保存）: ${e.message}`);
   }
+  if(savedToCloud) flushDeferredCloudRefresh();
 }
 
 // ─── Storage Setup Dialog ───
 function showStorageSetup(){
   if(currentUser.role!=='admin'){ showNotif('仅管理员可配置存储',true); return; }
   const cfg = lsLoad()||{};
-  const hasCloud = !!(cfg._sbUrl && cfg._sbKey);
+  const activeUrl = _sbUrl || cfg._sbUrl || '';
+  const activeKey = _sbKey || cfg._sbKey || '';
+  const activeTable = _sbTable || cfg._sbTable || 'scheduler_data';
+  const hasCloud = !!(activeUrl && activeKey);
+  const shareUrl = hasCloud ? buildCollabShareUrl(activeUrl, activeKey, activeTable) : '';
   const ov=document.createElement('div');
   ov.className='modal-overlay'; ov.id='modal-overlay';
   ov.innerHTML=`<div class="confirm-box" style="width:560px;text-align:left;max-height:90vh;overflow-y:auto">
@@ -1150,7 +1496,7 @@ function showStorageSetup(){
       ${hasCloud?`<span style="background:#dcfce7;color:#166534;font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500">已连接</span>`:`<span style="background:#fef9c3;color:#713f12;font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500">未配置</span>`}
     </div>
     <div style="font-size:12px;color:#6b7280;margin-bottom:12px;line-height:1.7">
-      接入 <a href="https://supabase.com" target="_blank" style="color:#5046e4">Supabase</a> 后，所有人打开此工具都能实时共享同一份数据。完全免费，步骤如下：<br>
+      接入 <a href="https://supabase.com" target="_blank" style="color:#5046e4">Supabase</a> 后，请把下方自动生成的「协作链接」发给团队成员；成员首次通过该链接打开后，就会共享同一份云端数据。完全免费，步骤如下：<br>
       ① 注册 supabase.com → 新建项目（选择靠近你的区域）<br>
       ② 进入 <b>Table Editor</b> → New Table，表名填 <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px">scheduler_data</code>，添加两列：<code style="background:#f3f4f6;padding:1px 4px;border-radius:3px">id</code>（text, primary key）和 <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px">payload</code>（text）<br>
       ③ 进入 <b>Project Settings → API</b>，复制 Project URL 和 anon public key 填到下方
@@ -1158,17 +1504,25 @@ function showStorageSetup(){
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
       <div class="fg">
         <div class="flabel">Project URL <span class="req">*</span></div>
-        <input id="sb-url" type="text" placeholder="https://xxxxxxxxxxxx.supabase.co" value="${cfg._sbUrl||''}">
+        <input id="sb-url" type="text" placeholder="https://xxxxxxxxxxxx.supabase.co" value="${activeUrl}">
       </div>
       <div class="fg">
         <div class="flabel">anon public key <span class="req">*</span></div>
-        <input id="sb-key" type="text" placeholder="eyJhbGci..." value="${cfg._sbKey||''}">
+        <input id="sb-key" type="text" placeholder="eyJhbGci..." value="${activeKey}">
         <div style="font-size:10px;color:#9b9b9b;margin-top:3px">Project Settings → API → Project API Keys → anon public</div>
       </div>
     </div>
     <div style="background:#fef9c3;border-radius:6px;padding:9px 12px;font-size:11px;color:#713f12;margin-bottom:14px">
       ⚠ 安全提示：anon key 是公开可读的密钥，专为前端使用设计。建议在 Supabase 的 Row Level Security 中设置读写权限策略。
     </div>
+    ${shareUrl?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:6px">多人协作链接</div>
+      <div style="font-size:11px;color:#475569;line-height:1.6;margin-bottom:8px">把下面链接发给成员。成员首次通过这个链接打开页面后，会自动接入同一个云端，后续编辑都会上传。</div>
+      <textarea id="sb-share-url" readonly style="width:100%;min-height:96px;padding:9px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;font-size:12px;line-height:1.5;resize:vertical">${shareUrl}</textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="copyCollabLink()">复制协作链接</button>
+      </div>
+    </div>`:''}
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn" onclick="closeModal()">取消</button>
       ${hasCloud?`<button class="btn danger" style="margin-right:auto" onclick="disconnectCloud()">断开云端</button>`:''}
@@ -1202,12 +1556,12 @@ async function doConnectCloud(){
     getSB();  // re-initialize with new URL/key
 
     // Persist config
-    const local=lsLoad()||{};
-    local._sbUrl=url; local._sbKey=key; local._sbTable='scheduler_data';
-    lsSave(local);
+    persistCloudConfig(url, key, 'scheduler_data');
 
     setBarState('cloud','云端已连接！数据已上传到 Supabase');
-    showNotif('🎉 Supabase 云端连接成功！所有修改将实时同步');
+    showNotif('🎉 Supabase 云端连接成功！请把协作链接发给成员，其他人的修改才会同步到同一云端');
+    startCloudSync();
+    showCollabShareDialog(buildCollabShareUrl(url, key, 'scheduler_data'));
   }catch(e){
     _sbUrl=''; _sbKey=''; _sbReady=false;
     setBarState('error','连接失败：'+e.message);
@@ -1216,9 +1570,11 @@ async function doConnectCloud(){
 }
 
 function disconnectCloud(){
+  stopCloudSync();
   const local=lsLoad()||{};
   delete local._sbUrl; delete local._sbKey; delete local._sbTable;
   lsSave(local);
+  stripCloudConfigFromLocation();
   _sbUrl=''; _sbKey=''; _sbReady=false;
   closeModal();
   setBarState('local');
@@ -1343,7 +1699,7 @@ function showNotif(msg,isErr){
   clearTimeout(el._t);
   el._t=setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.style.display='none',300)},3000);
 }
-function closeModal(){const o=document.getElementById('modal-overlay');if(o)o.remove()}
+function closeModal(){const o=document.getElementById('modal-overlay');if(o)o.remove();flushDeferredCloudRefresh()}
 function getDur(a){return Math.max(1,Math.ceil((new Date(a.endTime)-new Date(a.startTime))/86400000))}
 function getStatus(a){
   const now=TODAY,s=new Date(a.startTime),e=new Date(a.endTime);
