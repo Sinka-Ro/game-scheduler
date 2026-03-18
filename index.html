@@ -925,10 +925,11 @@ function lsLoad(){ try{ const r=localStorage.getItem(LS_KEY); return r?JSON.pars
 
 // ─── Snapshot ───
 function buildSnapshot(){
+  // Attachments saved separately — keep main snapshot small
   return { activities, GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300), calGame, calYear, calMonth,
-           attachments, savedAt:ts() };
+           savedAt:ts() };
 }
 
 function applySnapshot(d){
@@ -944,33 +945,27 @@ function applySnapshot(d){
   if(d.calGame) calGame=d.calGame;
   if(d.calYear) calYear=d.calYear;
   if(typeof d.calMonth==='number') calMonth=d.calMonth;
-  if(d.attachments&&typeof d.attachments==='object') Object.assign(attachments,d.attachments);
+  // attachments loaded separately via sbReadAttachments()
   return true;
 }
 
 // ─── Supabase REST helpers ───
-// Uses plain fetch against Supabase REST API — no SDK needed, works from file://
-async function sbUpsert(snapshot){
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.main_data`, {
-    method:'PATCH',
-    headers:{ 'Content-Type':'application/json','apikey':_sbKey,'Authorization':'Bearer '+_sbKey,
-              'Prefer':'return=minimal' },
-    body: JSON.stringify({ id:'main_data', payload: JSON.stringify(snapshot) })
-  });
-  if(r.status===404||r.status===0||!r.ok){
-    // Row doesn't exist yet — INSERT
-    const r2 = await fetch(`${_sbUrl}/rest/v1/${_sbTable}`, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json','apikey':_sbKey,'Authorization':'Bearer '+_sbKey,
-                'Prefer':'return=minimal' },
-      body: JSON.stringify({ id:'main_data', payload: JSON.stringify(snapshot) })
-    });
-    if(!r2.ok){ const t=await r2.text(); throw new Error(`写入失败 ${r2.status}: ${t}`); }
-  }
+// Main data  → row id='main_data'  (activities, config, logs — no images)
+// Attachments → row id='att_{actId}' (one row per activity, base64 images here)
+// This split keeps main_data small (<50KB) and prevents sync failures from large payloads.
+
+async function sbUpsertRow(rowId, payload){
+  const base = `${_sbUrl}/rest/v1/${_sbTable}`;
+  const hdrs = { 'Content-Type':'application/json', 'apikey':_sbKey,
+                 'Authorization':'Bearer '+_sbKey, 'Prefer':'return=minimal,resolution=merge-duplicates' };
+  const body = JSON.stringify({ id: rowId, payload: JSON.stringify(payload) });
+  // Use upsert (POST with merge-duplicates) — simpler and avoids PATCH/INSERT dance
+  const r = await fetch(base, { method:'POST', headers:hdrs, body });
+  if(!r.ok){ const t=await r.text(); throw new Error(`写入失败 ${r.status}: ${t.slice(0,120)}`); }
 }
 
-async function sbRead(){
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.main_data&select=payload`, {
+async function sbReadRow(rowId){
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
   });
   if(!r.ok) throw new Error(`读取失败 ${r.status}`);
@@ -979,43 +974,68 @@ async function sbRead(){
   return JSON.parse(rows[0].payload);
 }
 
+async function sbReadAttachments(){
+  // Fetch all attachment rows in one query
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
+    headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
+  });
+  if(!r.ok) return;
+  const rows = await r.json();
+  if(!rows||!rows.length) return;
+  rows.forEach(row=>{
+    try{
+      const actId = row.id.slice(4); // strip "att_" prefix
+      const atts  = JSON.parse(row.payload);
+      if(Array.isArray(atts)&&atts.length) attachments[actId]=atts;
+    }catch(e){}
+  });
+}
+
+async function sbSaveAttachments(actId){
+  if(!_sbReady||!_sbUrl||!_sbKey) return;
+  const atts=attachments[actId];
+  if(!atts||!atts.length){
+    // No attachments left — delete the row
+    fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.att_${encodeURIComponent(actId)}`,{
+      method:'DELETE', headers:{'apikey':_sbKey,'Authorization':'Bearer '+_sbKey}
+    }).catch(()=>{});
+    return;
+  }
+  await sbUpsertRow(`att_${actId}`, atts);
+}
+
 // ─── Load ───
 async function loadData(){
-  // 1. Always try localStorage first (instant)
   const local = lsLoad();
-  if(local && local._snapshot) applySnapshot(local._snapshot);
+  if(local && local._snapshot)    applySnapshot(local._snapshot);
+  if(local && local._attachments) Object.assign(attachments, local._attachments);
 
-  // 2. Load Supabase config from localStorage
   if(local && local._sbUrl && local._sbKey){
-    _sbUrl  = local._sbUrl;
-    _sbKey  = local._sbKey;
+    _sbUrl   = local._sbUrl;
+    _sbKey   = local._sbKey;
     _sbTable = local._sbTable || 'scheduler_data';
     try{
-      const cloud = await sbRead();
+      const cloud = await sbReadRow('main_data');
       if(cloud && cloud.savedAt){
-        // Use whichever is newer
-        const localTs  = local._snapshot?.savedAt||'';
-        const cloudTs  = cloud.savedAt;
-        if(!localTs || cloudTs >= localTs){
-          applySnapshot(cloud);
-        }
+        const localTs = local._snapshot?.savedAt||'';
+        if(!localTs || cloud.savedAt >= localTs) applySnapshot(cloud);
       }
+      // Load attachments in background — non-blocking
+      sbReadAttachments().catch(e=>console.warn('Attachment load failed',e));
       _sbReady = true;
-      setBarState('cloud', `云端已连接（Supabase）`);
+      setBarState('cloud','云端已连接（Supabase）');
     }catch(e){
-      console.warn('Supabase load failed', e);
-      setBarState('error', `云端读取失败，使用本地数据（${e.message}）`);
+      console.warn('Supabase load failed',e);
+      setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
     }
     return true;
   }
 
-  // 3. Local only
   if(local && local._snapshot){
-    setBarState('local', '本地自动保存已启用，数据刷新后不丢失');
+    setBarState('local','本地自动保存已启用，数据刷新后不丢失');
     return true;
   }
-
-  setBarState('local', '本地自动保存已启用 · 可在「存储设置」中接入 Supabase 云端');
+  setBarState('local','本地自动保存已启用 · 可在「存储设置」中接入 Supabase 云端');
   return false;
 }
 
@@ -1025,24 +1045,37 @@ async function saveData(){
   _saveTimer = setTimeout(_doSave, 800);
 }
 
-async function _doSave(){
-  const snapshot = buildSnapshot();
+// Call after modifying attachments for a specific activity
+async function saveAttachmentsFor(actId){
+  const local = lsLoad()||{};
+  local._attachments = attachments;
+  lsSave(local);
+  if(_sbReady && _sbUrl && _sbKey){
+    sbSaveAttachments(actId).catch(e=>{
+      console.warn('Attachment sync failed',e);
+      showNotif(`附件云端同步失败（本地已保存）: ${e.message}`,true);
+    });
+  }
+}
 
-  // Always save to localStorage first
-  const local = lsLoad() || {};
-  local._snapshot = snapshot;
+async function _doSave(){
+  const snapshot = buildSnapshot(); // main data only, no attachments
+
+  // Always save locally first
+  const local = lsLoad()||{};
+  local._snapshot    = snapshot;
+  local._attachments = attachments;
   lsSave(local);
   updateBarTs();
 
-  // Then try Supabase if configured
-  if(!_sbReady || !_sbUrl || !_sbKey){ setBarState('local'); return; }
+  if(!_sbReady||!_sbUrl||!_sbKey){ setBarState('local'); return; }
   setBarState('saving');
   try{
-    await sbUpsert(snapshot);
-    setBarState('saved', `已同步到云端 · ${ts()}`);
+    await sbUpsertRow('main_data', snapshot);
+    setBarState('saved',`已同步到云端 · ${ts()}`);
   }catch(e){
-    console.warn('Supabase save failed', e);
-    setBarState('error', `云端同步失败（本地已保存）: ${e.message}`);
+    console.warn('Supabase save failed',e);
+    setBarState('error',`云端同步失败（本地已保存）: ${e.message}`);
   }
 }
 
@@ -2802,7 +2835,7 @@ function processFiles(files, actId){
       if(!attachments[actId]) attachments[actId]=[];
       attachments[actId].push(att);
       refreshAttachList(actId);
-      saveData();
+      saveAttachmentsFor(actId);
       count++;
       if(count===files.length) showNotif(`成功添加 ${count} 个附件`);
     };
@@ -2841,7 +2874,7 @@ function doAddVideoUrl(actId){
   attachments[actId].push(att);
   document.getElementById('url-modal')?.remove();
   refreshAttachList(actId);
-  saveData();
+  saveAttachmentsFor(actId);
   showNotif('视频链接已添加');
 }
 
@@ -2850,7 +2883,7 @@ function deleteAttachment(actId, attId){
   attachments[actId]=attachments[actId].filter(x=>x.id!==attId);
   if(!attachments[actId].length) delete attachments[actId];
   refreshAttachList(actId);
-  saveData();
+  saveAttachmentsFor(actId);
   showNotif('附件已删除');
 }
 
