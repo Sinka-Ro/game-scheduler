@@ -362,6 +362,11 @@ let ACT_TYPES=['充值返利','版本更新','节日活动','赛事活动','福�
 const CHANNELS=['官服','渠道服','全渠道','海外服'];
 const TARGETS=['拉新','促活','提升付费','品牌曝光','用户留存'];
 const SOURCES=['官网','游戏内公告','社群','第三方平台','人工调研'];
+const TRIGGER_TYPES=[
+  {value:'time',label:'时间触发'},
+  {value:'login',label:'登录即触发'},
+  {value:'stamina',label:'耗体触发'}
+];
 const ROLES={admin:'管理员',editor:'编辑者',viewer:'查看者'};
 
 // Category rows definition per game — matches the reference image structure
@@ -1016,6 +1021,31 @@ function persistSnapshotToLocal(snapshot){
   lsSave(local);
 }
 
+function buildUiState(){
+  return {
+    calGame,
+    calYear,
+    calMonth,
+    activeGameFilter,
+    activeTypeFilter
+  };
+}
+
+function persistUiState(){
+  const local = lsLoad() || {};
+  local._ui = buildUiState();
+  lsSave(local);
+}
+
+function applyUiState(ui){
+  if(!ui) return;
+  if(ui.calGame) calGame = ui.calGame;
+  if(typeof ui.calYear === 'number') calYear = ui.calYear;
+  if(typeof ui.calMonth === 'number') calMonth = ui.calMonth;
+  if(ui.activeGameFilter) activeGameFilter = ui.activeGameFilter;
+  if(ui.activeTypeFilter) activeTypeFilter = ui.activeTypeFilter;
+}
+
 function stageLatestLocalSnapshot(){
   const snapshot = buildSnapshot();
   const rev = getSnapshotRevision(snapshot);
@@ -1025,6 +1055,26 @@ function stageLatestLocalSnapshot(){
   _syncLastAttachmentSig = getAttachmentsSignature(attachments);
   updateBarTs();
   return snapshot;
+}
+
+function deepClone(obj){
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function normalizeTriggerType(val){
+  return TRIGGER_TYPES.some(x=>x.value===val) ? val : 'time';
+}
+
+function getTriggerLabel(val){
+  return (TRIGGER_TYPES.find(x=>x.value===normalizeTriggerType(val)) || TRIGGER_TYPES[0]).label;
+}
+
+function normalizeActivity(act){
+  return act ? {...act, triggerType: normalizeTriggerType(act.triggerType)} : act;
+}
+
+function genLogId(){
+  return `log_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
 }
 
 function updateSyncMarkers(snapshot){
@@ -1295,9 +1345,9 @@ function showCollabShareDialog(shareUrl){
 function buildSnapshot(){
   // Attachments saved separately — keep main snapshot small
   const revision = Date.now();
-  return { activities, GAMES, ACT_TYPES, TYPE_COLORS,
+  return { activities:activities.map(normalizeActivity), GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
-           opLogs:opLogs.slice(0,300), calGame, calYear, calMonth,
+           opLogs:opLogs.slice(0,300),
            reports, REPORT_TAGS, REPORT_TAG_COLORS,
            savedAt:ts(), savedAtMs:revision,
            _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
@@ -1305,7 +1355,7 @@ function buildSnapshot(){
 
 function applySnapshot(d){
   if(!d) return false;
-  if(Array.isArray(d.activities)&&d.activities.length) activities=d.activities;
+  if(Array.isArray(d.activities)) activities=d.activities.map(normalizeActivity);
   if(Array.isArray(d.GAMES)&&d.GAMES.length) GAMES=d.GAMES;
   if(Array.isArray(d.ACT_TYPES)&&d.ACT_TYPES.length) ACT_TYPES=d.ACT_TYPES;
   if(d.TYPE_COLORS)     Object.assign(TYPE_COLORS,d.TYPE_COLORS);
@@ -1313,9 +1363,6 @@ function applySnapshot(d){
   if(d.GAME_CAT_COLORS) Object.assign(GAME_CAT_COLORS,d.GAME_CAT_COLORS);
   if(d.GAME_CAT_TEXT)   Object.assign(GAME_CAT_TEXT,d.GAME_CAT_TEXT);
   if(Array.isArray(d.opLogs)) opLogs=d.opLogs;
-  if(d.calGame) calGame=d.calGame;
-  if(d.calYear) calYear=d.calYear;
-  if(typeof d.calMonth==='number') calMonth=d.calMonth;
   // attachments loaded separately via sbReadAttachments()
   if(Array.isArray(d.reports)) reports=d.reports;
   if(Array.isArray(d.REPORT_TAGS)&&d.REPORT_TAGS.length) REPORT_TAGS=d.REPORT_TAGS;
@@ -1394,6 +1441,7 @@ async function loadData(){
   }
   if(local && local._snapshot)    applySnapshot(local._snapshot);
   if(local && local._attachments) Object.assign(attachments, local._attachments);
+  if(local && local._ui) applyUiState(local._ui);
 
   // Priority: hardcoded values in HTML > localStorage config
   // This ensures ALL users connect to the same Supabase even without localStorage config
@@ -1646,8 +1694,8 @@ function doExportJSON(){
 
 function doExportCSV(){
   const list=activities;
-  const headers=['活动ID','竞品游戏','活动类型','活动名称','开始时间','结束时间','预热时间','活动渠道','活动力度','活动目标','数据来源','录入人','录入时间'];
-  const rows=list.map(a=>[a.id,a.game,a.type,a.name,a.startTime,a.endTime,a.preheat||'无',a.channels.join('/'),(a.intensity||''),(a.goals||[]).join('/'),a.source,a.creator,a.createTime]);
+  const headers=['活动ID','竞品游戏','活动类型','活动名称','触发条件','开始时间','结束时间','预热时间','活动渠道','活动力度','活动目标','数据来源','录入人','录入时间'];
+  const rows=list.map(a=>[a.id,a.game,a.type,a.name,getTriggerLabel(a.triggerType),a.startTime,a.endTime,a.preheat||'无',a.channels.join('/'),(a.intensity||''),(a.goals||[]).join('/'),a.source,a.creator,a.createTime]);
   const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
@@ -1704,8 +1752,16 @@ async function doClearAllData(){
 
 function ts(){const n=new Date();return`${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`}
 function p(v){return String(v).padStart(2,'0')}
-function addLog(a){
-  opLogs.unshift({time:ts(),user:currentUser.name,action:a});
+function addLog(a, extra){
+  const entry = {
+    id: genLogId(),
+    time: ts(),
+    user: currentUser.name || '系统',
+    userId: currentUser.id || '',
+    action: a
+  };
+  if(extra) Object.assign(entry, extra);
+  opLogs.unshift(entry);
   saveData();
 }
 function showNotif(msg,isErr){
@@ -1967,7 +2023,7 @@ function renderCalendarView(container){
         <button class="mnav-btn" onclick="changeMonth(-1)">‹</button>
         <span class="mnav-label">${year}/${month+1}</span>
         <button class="mnav-btn" onclick="changeMonth(1)">›</button>
-        <button class="btn sm" onclick="calYear=2026;calMonth=2;renderMain()" style="margin-left:4px">今天</button>
+        <button class="btn sm" onclick="goToToday()" style="margin-left:4px">今天</button>
         <button class="btn sm" onclick="showModal('add')" style="margin-left:4px">+ 新增</button>
       </div>
     </div>
@@ -1996,12 +2052,20 @@ function renderCalendarView(container){
   }
 }
 
-function switchCalGame(g){calGame=g;renderMain();saveData()}
+function switchCalGame(g){calGame=g;persistUiState();renderMain()}
 function changeMonth(d){
   calMonth+=d;
   if(calMonth<0){calMonth=11;calYear--}
   if(calMonth>11){calMonth=0;calYear++}
-  renderMain();saveData();
+  persistUiState();
+  renderMain();
+}
+
+function goToToday(){
+  calYear = TODAY.getFullYear();
+  calMonth = TODAY.getMonth();
+  persistUiState();
+  renderMain();
 }
 
 // Tooltip
@@ -2012,6 +2076,7 @@ function showTip(e,id,mode){
   t.innerHTML=`<div class="tip-title">${a.name}</div>
     <div class="tip-row">竞品：<span>${a.game}</span></div>
     <div class="tip-row">类型：<span>${a.type}</span></div>
+    <div class="tip-row">触发：<span>${getTriggerLabel(a.triggerType)}</span></div>
     <div class="tip-row">时间：<span>${a.startTime.split(' ')[0]} ~ ${a.endTime.split(' ')[0]}</span></div>
     ${mode==='preheat'&&a.preheat?`<div class="tip-row" style="color:var(--primary)">预热：<span>${a.preheat.split(' ')[0]} 起</span></div>`:''}
     ${a.intensity?`<div class="tip-row">力度：<span>${a.intensity}</span></div>`:''}
@@ -2146,6 +2211,7 @@ function refreshTable(){
 
 function setFilter(dim,val){
   if(dim==='game')activeGameFilter=val;else activeTypeFilter=val;
+  persistUiState();
   renderMain();
 }
 
@@ -2935,6 +3001,50 @@ function refreshCatPanel(){
   }
 }
 
+function canUndoLog(log){
+  return currentUser.role==='admin' && !!log?.undo && !!log?.userId && log.userId!==currentUser.id && !log.undoMeta?.undoneAt;
+}
+
+function markLogUndone(log){
+  log.undoMeta = {
+    undoneAt: ts(),
+    undoneBy: currentUser.name
+  };
+}
+
+function undoLog(logId){
+  const log = opLogs.find(l=>l.id===logId);
+  if(!canUndoLog(log)){ showNotif('该日志当前不可撤销', true); return; }
+  const undo = log.undo || {};
+  try{
+    if(undo.kind === 'activity_create'){
+      const idSet = new Set(undo.ids || []);
+      activities = activities.filter(a=>!idSet.has(a.id));
+    }else if(undo.kind === 'activity_update'){
+      const before = normalizeActivity(undo.before);
+      const idx = activities.findIndex(a=>a.id===before?.id);
+      if(!before){ throw new Error('缺少原始活动数据'); }
+      if(idx >= 0) activities[idx] = before;
+      else activities.unshift(before);
+      ensureGameTypeVisible(before.game, before.type);
+    }else if(undo.kind === 'activity_delete'){
+      const deleted = normalizeActivity(undo.activity);
+      if(!deleted){ throw new Error('缺少已删除活动数据'); }
+      if(!activities.some(a=>a.id===deleted.id)) activities.unshift(deleted);
+      ensureGameTypeVisible(deleted.game, deleted.type);
+    }else{
+      throw new Error('暂不支持撤销该操作');
+    }
+    markLogUndone(log);
+    addLog(`撤销了 ${log.user} 的操作：${log.action}`);
+    stageLatestLocalSnapshot();
+    renderMain();
+    showNotif('已撤销该操作');
+  }catch(e){
+    showNotif(`撤销失败：${e.message}`, true);
+  }
+}
+
 function ensureGameTypeVisible(game, type){
   if(!game || !type) return;
   if(!GAME_CATS[game]) GAME_CATS[game] = [];
@@ -2965,9 +3075,15 @@ function renderLogsView(container){
   container.innerHTML=`<div style="padding:20px;overflow-y:auto;height:100%">
     <div style="font-size:15px;font-weight:600;margin-bottom:16px">操作日志</div>
     <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
-      ${opLogs.map(l=>`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:12px"><span style="font-weight:600">${l.user}</span> <span style="color:var(--text2)">${l.action}</span></div>
-        <div style="font-size:11px;color:var(--text3);flex-shrink:0;margin-left:16px">${l.time}</div>
+      ${opLogs.map(l=>`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="font-size:12px;min-width:0">
+          <span style="font-weight:600">${l.user}</span> <span style="color:var(--text2)">${l.action}</span>
+          ${l.undoMeta?.undoneAt?`<div style="margin-top:4px;font-size:11px;color:#92400e">已由 ${l.undoMeta.undoneBy} 于 ${l.undoMeta.undoneAt} 撤销</div>`:''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          ${canUndoLog(l)?`<button class="btn sm" onclick="undoLog('${l.id}')">撤销</button>`:''}
+          <div style="font-size:11px;color:var(--text3)">${l.time}</div>
+        </div>
       </div>`).join('')}
       ${!opLogs.length?`<div style="padding:32px;text-align:center;color:var(--text3)">暂无操作日志</div>`:''}
     </div>
@@ -2982,6 +3098,7 @@ function showModal(mode,id){
   const v=(f,d='')=>a?(a[f]||d):d;
   const selectedGame = a?.game || calGame;
   const selectedType = a?.type || ACT_TYPES[0] || '';
+  const selectedTriggerType = normalizeTriggerType(a?.triggerType);
   const ov=document.createElement('div');
   ov.className='modal-overlay';ov.id='modal-overlay';
   ov.innerHTML=`<div class="modal">
@@ -3010,6 +3127,8 @@ function showModal(mode,id){
         <div class="fg"><div class="flabel">数据来源 <span class="req">*</span></div>
           <select id="f-source">${SOURCES.map(s=>`<option ${v('source')===s?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
+      <div class="fg full"><div class="flabel">触发条件</div>
+        <select id="f-trigger-type">${TRIGGER_TYPES.map(item=>`<option value="${item.value}" ${selectedTriggerType===item.value?'selected':''}>${item.label}</option>`).join('')}</select></div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">活动渠道（Ctrl多选）<span class="req">*</span></div>
           <select id="f-channels" multiple style="height:72px">${CHANNELS.map(c=>`<option ${v('channels',[]).includes(c)?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -3110,6 +3229,7 @@ function saveActivity(){
   const intensity=document.getElementById('f-intensity').value;
   const rules=document.getElementById('f-rules').value;
   const note=document.getElementById('f-note').value;
+  const triggerType=normalizeTriggerType(document.getElementById('f-trigger-type')?.value);
   const important=document.getElementById('f-important').checked;
   if(!n){showNotif('活动名称不能为空',true);return}
   if(!s||!e){showNotif('时间不能为空',true);return}
@@ -3124,14 +3244,16 @@ function saveActivity(){
     // Edit mode — single update
     const idx=activities.findIndex(a=>a.id===editingId);
     if(idx>=0){
+      const before = deepClone(activities[idx]);
       ensureGameTypeVisible(g, t);
-      activities[idx]={...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,modifier:currentUser.name,modifyTime:now};
-      addLog(`修改了《${g}》${n}`);
+      activities[idx]=normalizeActivity({...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,modifier:currentUser.name,modifyTime:now});
+      addLog(`修改了《${g}》${n}`, {undo:{kind:'activity_update', before}});
       showNotif(`修改成功：${n}`);
     }
     stageLatestLocalSnapshot();
     activeGameFilter='all';
     activeTypeFilter='all';
+    persistUiState();
     closeModal();renderMain();
     return;
   }
@@ -3171,13 +3293,13 @@ function saveActivity(){
       const newStart=shiftDateStr(s, curShift);
       const newEnd  =shiftDateStr(e, curShift);
       const newPh   =ph&&phOffset!==null ? shiftDateStr(ph, curShift) : ph;
-      newItems.push({id:newId,game:g,type:t,name:n,startTime:newStart,endTime:newEnd,preheat:newPh,channels,goals,intensity,rules,note,source:src,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
+      newItems.push(normalizeActivity({id:newId,game:g,type:t,name:n,startTime:newStart,endTime:newEnd,preheat:newPh,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now}));
       created++;
       curShift+=step;
     }
     // Insert all at front
     activities.unshift(...newItems.reverse());
-    addLog(`循环创建了 ${created} 条《${g}》${t} · ${n}（间隔${gap}天）`);
+    addLog(`循环创建了 ${created} 条《${g}》${t} · ${n}（间隔${gap}天）`, {undo:{kind:'activity_create', ids:newItems.map(item=>item.id)}});
     showNotif(`循环创建成功：共生成 ${created} 条活动`);
   } else {
     // Single creation
@@ -3185,8 +3307,9 @@ function saveActivity(){
     const dc=s.split(' ')[0].replace(/-/g,'');
     const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+1).padStart(3,'0');
     const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
-    activities.unshift({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
-    addLog(`新增了《${g}》${n}`);
+    const createdActivity = normalizeActivity({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
+    activities.unshift(createdActivity);
+    addLog(`新增了《${g}》${n}`, {undo:{kind:'activity_create', ids:[newId]}});
     showNotif(`新增成功：《${g}》${t} · ${n}`);
   }
 
@@ -3194,6 +3317,7 @@ function saveActivity(){
   activeGameFilter='all';
   activeTypeFilter='all';
   calGame=g;currentTab='calendar';
+  persistUiState();
   document.querySelectorAll('.nav-tab').forEach((tb,i)=>tb.classList.toggle('active',i===1));
   closeModal();renderMain();
 }
@@ -3224,13 +3348,14 @@ function showDetail(id){
     <div class="modal-body">
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         <span class="tag" style="background:${c.bg};color:${c.text}">${a.type}</span>
+        <span class="tag" style="background:#eef2ff;color:#4338ca">${getTriggerLabel(a.triggerType)}</span>
         <span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span>
         ${a.channels.map(ch=>`<span class="tag" style="background:#f3f4f6;color:#374151">${ch}</span>`).join('')}
         ${(a.goals||[]).map(g=>`<span class="tag" style="background:#dbeafe;color:#1d4ed8">${g}</span>`).join('')}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
         ${[['竞品游戏',a.game],['活动类型',a.type],['开始时间',a.startTime],['结束时间',a.endTime],
-           ['预热时间',a.preheat||'无'],['活动周期',getDur(a)+'天'],['数据来源',a.source],['录入人',a.creator]
+           ['预热时间',a.preheat||'无'],['触发条件',getTriggerLabel(a.triggerType)],['活动周期',getDur(a)+'天'],['数据来源',a.source],['录入人',a.creator]
           ].map(([l,v])=>`<div><div style="font-size:11px;color:var(--text3)">${l}</div><div style="margin-top:2px">${v}</div></div>`).join('')}
       </div>
       ${a.intensity?`<div><div style="font-size:11px;color:var(--text3)">活动力度</div><div style="margin-top:3px">${a.intensity}</div></div>`:''}
@@ -3741,7 +3866,7 @@ function confirmDelete(id){
 function doDelete(id){
   const a=activities.find(x=>x.id===id);
   activities=activities.filter(x=>x.id!==id);
-  if(a)addLog(`删除了《${a.game}》${a.name}`);
+  if(a)addLog(`删除了《${a.game}》${a.name}`, {undo:{kind:'activity_delete', activity:deepClone(a)}});
   closeModal();showNotif('删除成功');renderMain();
 }
 
@@ -3785,6 +3910,7 @@ function copyActivity(id){
   const ov=document.createElement('div');
   ov.className='modal-overlay';ov.id='modal-overlay';
   const v=(f,d='')=>a[f]!==undefined?a[f]:d;
+  const selectedTriggerType = normalizeTriggerType(a?.triggerType);
   ov.innerHTML=`<div class="modal">
     <div class="modal-hd">
       <div>
@@ -3814,6 +3940,8 @@ function copyActivity(id){
         <div class="fg"><div class="flabel">数据来源 <span class="req">*</span></div>
           <select id="f-source">${SOURCES.map(s=>`<option ${v('source')===s?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
+      <div class="fg full"><div class="flabel">触发条件</div>
+        <select id="f-trigger-type">${TRIGGER_TYPES.map(item=>`<option value="${item.value}" ${selectedTriggerType===item.value?'selected':''}>${item.label}</option>`).join('')}</select></div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">活动渠道（Ctrl多选）<span class="req">*</span></div>
           <select id="f-channels" multiple style="height:72px">${CHANNELS.map(c=>`<option ${v('channels',[]).includes(c)?'selected':''}>${c}</option>`).join('')}</select></div>
