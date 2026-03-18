@@ -1062,6 +1062,10 @@ function deepClone(obj){
   return JSON.parse(JSON.stringify(obj));
 }
 
+function genActivityKey(){
+  return `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+}
+
 function normalizeTriggerType(val){
   return TRIGGER_TYPES.some(x=>x.value===val) ? val : 'time';
 }
@@ -1071,7 +1075,21 @@ function getTriggerLabel(val){
 }
 
 function normalizeActivity(act){
-  return act ? {...act, triggerType: normalizeTriggerType(act.triggerType)} : act;
+  return act ? {...act, _akey: act._akey || genActivityKey(), triggerType: normalizeTriggerType(act.triggerType)} : act;
+}
+
+function getActivityRef(act){
+  return act?._akey || act?.id || '';
+}
+
+function findActivityByRef(ref){
+  return activities.find(x=>x._akey===ref) || activities.find(x=>x.id===ref);
+}
+
+function findActivityIndexByRef(ref){
+  const keyIdx = activities.findIndex(x=>x._akey===ref);
+  if(keyIdx >= 0) return keyIdx;
+  return activities.findIndex(x=>x.id===ref);
 }
 
 function genLogId(){
@@ -1995,7 +2013,7 @@ function renderCalendarView(container){
           const starMark=act.important?'⭐ ':'';
           const importantStyle=act.important?`box-shadow:0 0 0 2px #f59e0b;font-weight:600;`:'';
           bars+=`<div class="act-bar" style="left:${geom.left}px;width:${geom.width}px;background:${c.bg};color:${c.text};border:1px solid ${c.border};${importantStyle}" 
-            onmouseenter="showTip(event,'${act.id}')" onmouseleave="hideTip()" onclick="showDetail('${act.id}')">${starMark}${act.name}</div>`;
+            onmouseenter="showTip(event,'${getActivityRef(act)}')" onmouseleave="hideTip()" onclick="showDetail('${getActivityRef(act)}')">${starMark}${act.name}</div>`;
         }
         // preheat bar
         if(act.preheat){
@@ -2003,7 +2021,7 @@ function renderCalendarView(container){
           if(pGeom&&pGeom.width>4){
             const c=TYPE_COLORS[act.type]||{border:'#9ca3af',text:'#6b7280'};
             bars+=`<div class="preheat-bar" style="left:${pGeom.left}px;width:${pGeom.width-2}px;border-color:${c.border};color:${c.text}" 
-              onmouseenter="showTip(event,'${act.id}','preheat')" onmouseleave="hideTip()">预热</div>`;
+              onmouseenter="showTip(event,'${getActivityRef(act)}','preheat')" onmouseleave="hideTip()">预热</div>`;
           }
         }
       });
@@ -2071,7 +2089,7 @@ function goToToday(){
 
 // Tooltip
 function showTip(e,id,mode){
-  const a=activities.find(x=>x.id===id);if(!a)return;
+  const a=findActivityByRef(id);if(!a)return;
   const t=document.getElementById('tip');
   const st=getStatus(a);
   t.innerHTML=`<div class="tip-title">${a.name}</div>
@@ -2201,10 +2219,10 @@ function refreshTable(){
       <td style="font-size:11px">${getDur(a)}天</td>
       <td style="font-size:11px;color:var(--text2)">${a.channels.join('/')}</td>
       <td>
-        <button class="btn sm" onclick="showDetail('${a.id}')">详情</button>
-        ${canEdit?`<button class="btn sm" onclick="showModal('edit','${a.id}')" style="margin-left:3px">编辑</button>`:''}
-        ${canEdit?`<button class="btn sm" onclick="copyActivity('${a.id}')" style="margin-left:3px" title="复制此活动">复制</button>`:''}
-        ${canDel?`<button class="btn sm danger" onclick="confirmDelete('${a.id}')" style="margin-left:3px">删除</button>`:''}
+        <button class="btn sm" onclick="showDetail('${getActivityRef(a)}')">详情</button>
+        ${canEdit?`<button class="btn sm" onclick="showModal('edit','${getActivityRef(a)}')" style="margin-left:3px">编辑</button>`:''}
+        ${canEdit?`<button class="btn sm" onclick="copyActivity('${getActivityRef(a)}')" style="margin-left:3px" title="复制此活动">复制</button>`:''}
+        ${canDel?`<button class="btn sm danger" onclick="confirmDelete('${getActivityRef(a)}')" style="margin-left:3px">删除</button>`:''}
       </td>
     </tr>`;
   }).join('');
@@ -3019,11 +3037,11 @@ function undoLog(logId){
   const undo = log.undo || {};
   try{
     if(undo.kind === 'activity_create'){
-      const idSet = new Set(undo.ids || []);
-      activities = activities.filter(a=>!idSet.has(a.id));
+      const refSet = new Set(undo.refs || undo.ids || []);
+      activities = activities.filter(a=>!refSet.has(getActivityRef(a)) && !refSet.has(a.id));
     }else if(undo.kind === 'activity_update'){
       const before = normalizeActivity(undo.before);
-      const idx = activities.findIndex(a=>a.id===before?.id);
+      const idx = findActivityIndexByRef(before?._akey || before?.id);
       if(!before){ throw new Error('缺少原始活动数据'); }
       if(idx >= 0) activities[idx] = before;
       else activities.unshift(before);
@@ -3094,7 +3112,7 @@ function renderLogsView(container){
 // ===================== MODALS =====================
 function showModal(mode,id){
   if(currentUser.role==='viewer'){showNotif('您没有编辑权限',true);return}
-  const a=id?activities.find(x=>x.id===id):null;
+  const a=id?findActivityByRef(id):null;
   editingId=id||null;
   const v=(f,d='')=>a?(a[f]||d):d;
   const selectedGame = a?.game || calGame;
@@ -3243,7 +3261,7 @@ function saveActivity(){
 
   if(editingId){
     // Edit mode — single update
-    const idx=activities.findIndex(a=>a.id===editingId);
+    const idx=findActivityIndexByRef(editingId);
     if(idx>=0){
       const before = deepClone(activities[idx]);
       ensureGameTypeVisible(g, t);
@@ -3300,7 +3318,7 @@ function saveActivity(){
     }
     // Insert all at front
     activities.unshift(...newItems.reverse());
-    addLog(`循环创建了 ${created} 条《${g}》${t} · ${n}（间隔${gap}天）`, {undo:{kind:'activity_create', ids:newItems.map(item=>item.id)}});
+    addLog(`循环创建了 ${created} 条《${g}》${t} · ${n}（间隔${gap}天）`, {undo:{kind:'activity_create', refs:newItems.map(item=>getActivityRef(item))}});
     showNotif(`循环创建成功：共生成 ${created} 条活动`);
   } else {
     // Single creation
@@ -3310,7 +3328,7 @@ function saveActivity(){
     const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
     const createdActivity = normalizeActivity({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
     activities.unshift(createdActivity);
-    addLog(`新增了《${g}》${n}`, {undo:{kind:'activity_create', ids:[newId]}});
+    addLog(`新增了《${g}》${n}`, {undo:{kind:'activity_create', refs:[getActivityRef(createdActivity)]}});
     showNotif(`新增成功：《${g}》${t} · ${n}`);
   }
 
@@ -3324,16 +3342,17 @@ function saveActivity(){
 }
 
 function showDetail(id){
-  const a=activities.find(x=>x.id===id);if(!a)return;
+  const a=findActivityByRef(id);if(!a)return;
   const st=getStatus(a);
   const c=TYPE_COLORS[a.type]||{bg:'#f3f4f6',text:'#6b7280'};
-  const atts=attachments[id]||[];
+  const actId=a.id;
+  const atts=attachments[actId]||[];
   const canEdit=currentUser.role!=='viewer';
 
   function attThumb(att){
-    if(att.type==='image') return `<img class="attach-thumb" src="${att.data}" onclick="openLightbox('${id}','${att.id}')" alt="${att.name}">`;
-    if(att.type==='video') return `<div class="attach-thumb-vid" onclick="openLightbox('${id}','${att.id}')">▶</div>`;
-    return `<div class="attach-thumb-vid" onclick="openLightbox('${id}','${att.id}')">🔗</div>`;
+    if(att.type==='image') return `<img class="attach-thumb" src="${att.data}" onclick="openLightbox('${actId}','${att.id}')" alt="${att.name}">`;
+    if(att.type==='video') return `<div class="attach-thumb-vid" onclick="openLightbox('${actId}','${att.id}')">▶</div>`;
+    return `<div class="attach-thumb-vid" onclick="openLightbox('${actId}','${att.id}')">🔗</div>`;
   }
 
   const ov=document.createElement('div');
@@ -3367,17 +3386,17 @@ function showDetail(id){
       <div>
         <div style="font-size:12px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
           <span>附件 · 图片 / 视频 <span style="font-weight:400;color:var(--text3)">(${atts.length})</span></span>
-          ${canEdit?`<button class="btn sm" onclick="showAddVideoUrl('${id}')">+ 粘贴视频链接</button>`:''}
+          ${canEdit?`<button class="btn sm" onclick="showAddVideoUrl('${actId}')">+ 粘贴视频链接</button>`:''}
         </div>
-        ${canEdit?`<div class="attach-zone" id="dropzone-${id}" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${id}')">
-          <input type="file" accept="image/*,video/*" multiple onchange="onFileSelect(event,'${id}')">
+        ${canEdit?`<div class="attach-zone" id="dropzone-${actId}" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${actId}')">
+          <input type="file" accept="image/*,video/*" multiple onchange="onFileSelect(event,'${actId}')">
           <div style="pointer-events:none">
             <div style="font-size:20px;margin-bottom:6px">📎</div>
             <div style="font-size:12px;color:var(--text2)">点击选择 或 拖拽图片/视频文件到此处</div>
             <div style="font-size:10px;color:var(--text3);margin-top:3px">支持 JPG/PNG/GIF/MP4/MOV 等，单文件最大 5MB</div>
           </div>
         </div>`:''}
-        <div class="attach-list" id="attach-list-${id}">
+        <div class="attach-list" id="attach-list-${actId}">
           ${atts.map(att=>`
             <div class="attach-item" id="att-${att.id}">
               ${attThumb(att)}
@@ -3385,7 +3404,7 @@ function showDetail(id){
                 <div class="attach-name" title="${att.name}">${att.name}</div>
                 <div class="attach-size">${att.type==='video_url'?'视频链接':formatSize(att.size||0)} · ${att.addedBy} · ${att.addedAt}</div>
               </div>
-              ${canEdit?`<button class="attach-del" onclick="deleteAttachment('${id}','${att.id}')" title="删除">✕</button>`:''}
+              ${canEdit?`<button class="attach-del" onclick="deleteAttachment('${actId}','${att.id}')" title="删除">✕</button>`:''}
             </div>`).join('')}
           ${!atts.length&&!canEdit?`<div style="color:var(--text3);font-size:12px;padding:8px 0">暂无附件</div>`:''}
         </div>
@@ -3395,10 +3414,10 @@ function showDetail(id){
       <div style="font-size:11px;color:var(--text3);padding-top:8px;border-top:1px solid var(--border)">最后修改：${a.modifier} · ${a.modifyTime}</div>
     </div>
     <div class="modal-ft">
-      ${canEdit&&currentUser.role==='admin'?`<button class="btn danger" style="margin-right:auto" onclick="closeModal();confirmDelete('${a.id}')">删除</button>`:''}
+      ${canEdit&&currentUser.role==='admin'?`<button class="btn danger" style="margin-right:auto" onclick="closeModal();confirmDelete('${getActivityRef(a)}')">删除</button>`:''}
       <button class="btn" onclick="closeModal()">关闭</button>
-      ${canEdit?`<button class="btn" onclick="closeModal();copyActivity('${a.id}')">复制活动</button>`:''}
-      ${canEdit?`<button class="btn primary" onclick="closeModal();showModal('edit','${a.id}')">编辑</button>`:''}
+      ${canEdit?`<button class="btn" onclick="closeModal();copyActivity('${getActivityRef(a)}')">复制活动</button>`:''}
+      ${canEdit?`<button class="btn primary" onclick="closeModal();showModal('edit','${getActivityRef(a)}')">编辑</button>`:''}
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -3850,7 +3869,7 @@ async function exportAllImages(game){
 // ===================== END MEDIA =====================
 
 function confirmDelete(id){
-  const a=activities.find(x=>x.id===id);if(!a)return;
+  const a=findActivityByRef(id);if(!a)return;
   const ov=document.createElement('div');
   ov.className='modal-overlay';ov.id='modal-overlay';
   ov.innerHTML=`<div class="confirm-box">
@@ -3865,8 +3884,8 @@ function confirmDelete(id){
 }
 
 function doDelete(id){
-  const a=activities.find(x=>x.id===id);
-  activities=activities.filter(x=>x.id!==id);
+  const a=findActivityByRef(id);
+  activities=activities.filter(x=>getActivityRef(x)!==id && x.id!==id);
   if(a)addLog(`删除了《${a.game}》${a.name}`, {undo:{kind:'activity_delete', activity:deepClone(a)}});
   closeModal();showNotif('删除成功');renderMain();
 }
@@ -3904,7 +3923,7 @@ function showUserMenu(){
 
 // ===================== COPY ACTIVITY =====================
 function copyActivity(id){
-  const a=activities.find(x=>x.id===id);
+  const a=findActivityByRef(id);
   if(!a){showNotif('活动不存在',true);return;}
   // Pre-fill form with copied data, new ID will be generated on save
   editingId=null;
@@ -4043,7 +4062,7 @@ function renderDailyView(container){
         </div>`:''}
       </div>` : '';
 
-    return`<div class="daily-card ${a.important?'important-card':''}" onclick="showDetail('${a.id}')">
+    return`<div class="daily-card ${a.important?'important-card':''}" onclick="showDetail('${getActivityRef(a)}')">
       ${slideshowHtml}
       <div class="daily-card-body">
         <div class="daily-card-num">${i+1}</div>
