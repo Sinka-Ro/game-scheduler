@@ -259,6 +259,25 @@ textarea{resize:vertical;min-height:64px}
 /* Media type grouping */
 .media-type-section{margin-bottom:20px}
 .media-type-hd{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+/* ── Report ── */
+.report-view{display:flex;height:100%;overflow:hidden}
+.report-sidebar{width:220px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;padding:14px 12px;gap:4px;overflow-y:auto}
+.report-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.report-toolbar{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--bg)}
+.report-grid{flex:1;overflow-y:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;align-content:start}
+.report-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.report-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#5046e4}
+.report-card-thumb{width:100%;height:160px;background:var(--bg2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.report-card-thumb img{width:100%;height:100%;object-fit:cover}
+.report-card-thumb .pdf-icon{font-size:48px;opacity:.5}
+.report-card-body{padding:12px 14px}
+.report-card-title{font-size:13px;font-weight:600;margin-bottom:5px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.report-card-meta{font-size:11px;color:var(--text3);margin-bottom:6px}
+.report-tags{display:flex;flex-wrap:wrap;gap:4px}
+.rtag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500;cursor:pointer}
+.rtag-filter{padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;border:none;background:transparent;width:100%;text-align:left;color:var(--text2)}
+.rtag-filter:hover,.rtag-filter.active{background:var(--bg2);color:#5046e4;font-weight:500}
+.report-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:10px;padding:40px}
 </style>
 </head>
 <body>
@@ -321,7 +340,7 @@ textarea{resize:vertical;min-height:64px}
     <div class="nav-tab active" onclick="switchTab(this,'calendar')">排期日历</div>
     <div class="nav-tab" onclick="switchTab(this,'stats')">数据统计</div>
     <div class="nav-tab" onclick="switchTab(this,'media')">媒体库</div>
-    <div class="nav-tab" onclick="switchTab(this,'daily')">每日推荐</div>
+    <div class="nav-tab" onclick="switchTab(this,'report')">调研报告</div>
     <div class="nav-tab" id="collab-tab" onclick="switchTab(this,'collab')" style="display:none">协作管理</div>
     <div class="nav-tab" id="logs-tab" onclick="switchTab(this,'logs')" style="display:none">操作日志</div>
   </div>
@@ -862,6 +881,25 @@ let opLogs=[
 // data: base64 for images/videos, URL string for video_url
 let attachments = {};
 
+// reports: [ {id, title, desc, tags[], fileType, fileData, thumb, uploader, uploadTime, keywords} ]
+// fileType: 'pdf' | 'image' | 'link'
+// fileData: base64 (pdf/image) or URL string (link)
+// thumb: base64 image for preview (first page screenshot for pdf, or image itself)
+let reports = [];
+// report tag definitions
+let REPORT_TAGS = ['竞品分析','用户调研','市场报告','版本复盘','活动复盘','行业趋势','用户画像','数据报告'];
+let REPORT_TAG_COLORS = {
+  '竞品分析':  {bg:'#fee2e2',text:'#991b1b'},
+  '用户调研':  {bg:'#dbeafe',text:'#1d4ed8'},
+  '市场报告':  {bg:'#dcfce7',text:'#166534'},
+  '版本复盘':  {bg:'#ede9fe',text:'#5b21b6'},
+  '活动复盘':  {bg:'#fef9c3',text:'#713f12'},
+  '行业趋势':  {bg:'#ffedd5',text:'#9a3412'},
+  '用户画像':  {bg:'#fce7f3',text:'#9d174d'},
+  '数据报告':  {bg:'#ccfbf1',text:'#0f766e'},
+};
+let reportTagFilter = 'all'; // current filter in report view
+
 // ===================== UTILS =====================
 const TODAY_STR='2026-03-17';
 const TODAY=new Date(TODAY_STR);
@@ -929,6 +967,7 @@ function buildSnapshot(){
   return { activities, GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300), calGame, calYear, calMonth,
+           reports, REPORT_TAGS, REPORT_TAG_COLORS,
            savedAt:ts() };
 }
 
@@ -946,6 +985,9 @@ function applySnapshot(d){
   if(d.calYear) calYear=d.calYear;
   if(typeof d.calMonth==='number') calMonth=d.calMonth;
   // attachments loaded separately via sbReadAttachments()
+  if(Array.isArray(d.reports)) reports=d.reports;
+  if(Array.isArray(d.REPORT_TAGS)&&d.REPORT_TAGS.length) REPORT_TAGS=d.REPORT_TAGS;
+  if(d.REPORT_TAG_COLORS) Object.assign(REPORT_TAG_COLORS,d.REPORT_TAG_COLORS);
   return true;
 }
 
@@ -1314,7 +1356,8 @@ function renderMain(){
   else if(currentTab==='list'){renderListView(el);}
   else if(currentTab==='stats'){renderStatsView(el);}
   else if(currentTab==='media'){renderMediaView(el);}
-  else if(currentTab==='daily'){renderDailyView(el);}
+  else if(currentTab==='report'){renderReportView(el);}
+  else if(currentTab==='daily'){renderDailyView(el);} // kept but hidden
   else if(currentTab==='collab'){
     if(currentUser.role==='admin') renderCollabView(el);
     else { currentTab='calendar'; renderCalendarView(el); }
@@ -1893,7 +1936,36 @@ function renderCollabView(container){
       </div>
     </div>
 
-    <!-- ④ 成员与权限管理 -->
+    <!-- ④ 调研报告标签管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600">调研报告标签管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">管理「调研报告」页签中使用的标签，共 ${REPORT_TAGS.length} 个</div>
+        </div>
+        ${canManage?`<button class="btn primary" onclick="showAddReportTagDialog()">+ 新增标签</button>`:''}
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);font-weight:600;display:flex;justify-content:space-between">
+          <span>标签名称</span><span>操作</span>
+        </div>
+        ${REPORT_TAGS.map((tag,i)=>{
+          const c=REPORT_TAG_COLORS[tag]||{bg:'#f3f4f6',text:'#6b7280'};
+          return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="rtag" style="background:${c.bg};color:${c.text}">${tag}</span>
+            </div>
+            ${canManage?`<div style="display:flex;gap:5px">
+              <button class="btn sm" onclick="showEditReportTagDialog(${i})">修改</button>
+              <button class="btn sm danger" onclick="confirmDeleteReportTag(${i})">删除</button>
+            </div>`:''}
+          </div>`;
+        }).join('')}
+        ${!REPORT_TAGS.length?`<div style="padding:24px;text-align:center;color:var(--text3)">暂无标签，点击「新增标签」添加</div>`:''}
+      </div>
+    </div>
+
+    <!-- ⑤ 成员与权限管理 -->
     <div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div>
@@ -3021,7 +3093,14 @@ function renderMediaView(container){
     <div class="media-toolbar">
       <div style="font-size:13px;font-weight:600">媒体库</div>
       <div class="media-game-tabs">${tabs}</div>
-      <div style="margin-left:auto;font-size:11px;color:var(--text3)">${filteredItems.length} 个文件</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:var(--text3)">${filteredItems.length} 个文件</span>
+        ${filteredItems.filter(({att})=>att.type==='image').length>0
+          ?`<button class="btn sm" onclick="exportAllImages('${mediaGame}')" style="font-size:11px;white-space:nowrap">
+              ⬇ 导出全部图片（${filteredItems.filter(({att})=>att.type==='image').length}张）
+            </button>`
+          :''}
+      </div>
     </div>
     ${groupedHtml}
   </div>`;
@@ -3033,6 +3112,62 @@ function openLightboxFromMedia(actId, attId){
   _lbIdx=atts.findIndex(x=>x.id===attId);
   if(_lbIdx<0) _lbIdx=0;
   _renderLightbox();
+}
+
+// ── Export all images as ZIP ──
+async function exportAllImages(game){
+  const items=[];
+  Object.entries(attachments).forEach(([actId,atts])=>{
+    const act=activities.find(a=>a.id===actId);
+    if(game!=='all'&&(!act||act.game!==game)) return;
+    atts.filter(att=>att.type==='image').forEach(att=>items.push({att,act}));
+  });
+  if(!items.length){showNotif('当前没有可导出的图片',true);return;}
+  showNotif(`正在打包 ${items.length} 张图片，请稍候…`);
+
+  try{
+    // Load JSZip dynamically
+    await new Promise((resolve,reject)=>{
+      if(window.JSZip){resolve();return;}
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload=resolve; s.onerror=reject;
+      document.head.appendChild(s);
+    });
+    const zip=new JSZip();
+    const folderName=game==='all'?'全部游戏':game;
+    const folder=zip.folder(folderName);
+    items.forEach(({att,act},i)=>{
+      const base64=att.data.split(',')[1];
+      const ext=att.name.includes('.')?att.name.split('.').pop():'jpg';
+      const safe=(s)=>s.replace(/[\/\\:*?"<>|]/g,'_').slice(0,30);
+      const fname=`${String(i+1).padStart(3,'0')}_${safe(act?.name||'未知活动')}.${ext}`;
+      folder.file(fname, base64, {base64:true});
+    });
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:3}});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`${folderName}_图片_${ts().replace(/[: ]/g,'-')}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotif(`✓ 已打包导出 ${items.length} 张图片`);
+  }catch(e){
+    // Fallback: download one by one
+    console.warn('JSZip failed, downloading individually',e);
+    showNotif(`正在逐张下载 ${items.length} 张图片…`);
+    for(let i=0;i<items.length;i++){
+      const {att,act}=items[i];
+      const ext=att.data.split(';')[0].split('/')[1]||'jpg';
+      const safe=(s)=>s.replace(/[\/\\:*?"<>|]/g,'_').slice(0,20);
+      const a=document.createElement('a');
+      a.href=att.data;
+      a.download=`${String(i+1).padStart(3,'0')}_${safe(act?.name||'图片')}.${ext}`;
+      a.click();
+      await new Promise(r=>setTimeout(r,400));
+    }
+    showNotif(`✓ 已触发下载 ${items.length} 张图片`);
+  }
 }
 
 // ===================== END MEDIA =====================
@@ -3285,6 +3420,433 @@ function renderDailyView(container){
   });
 }
 // ===================== END DAILY RECOMMENDATIONS =====================
+
+// ===================== REPORT MODULE =====================
+
+function genReportId(){ return 'rpt_'+Date.now()+'_'+Math.random().toString(36).slice(2,7); }
+
+// ── Render Report View ──
+function renderReportView(container){
+  const canEdit = currentUser.role!=='viewer';
+  const q = (document.getElementById('report-search-val')||{value:''}).value||'';
+
+  // Build filtered list
+  let list = reports.filter(r=>{
+    if(reportTagFilter!=='all' && !r.tags.includes(reportTagFilter)) return false;
+    if(q){
+      const ql=q.toLowerCase();
+      const inTitle=r.title.toLowerCase().includes(ql);
+      const inDesc=(r.desc||'').toLowerCase().includes(ql);
+      const inKw=(r.keywords||'').toLowerCase().includes(ql);
+      const inTags=r.tags.some(t=>t.toLowerCase().includes(ql));
+      if(!inTitle&&!inDesc&&!inKw&&!inTags) return false;
+    }
+    return true;
+  });
+
+  // Tag counts for sidebar
+  const tagCounts={};
+  reports.forEach(r=>r.tags.forEach(t=>tagCounts[t]=(tagCounts[t]||0)+1));
+
+  const tagColor = t => REPORT_TAG_COLORS[t]||{bg:'#f3f4f6',text:'#6b7280'};
+
+  const sidebarHtml = `
+    <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:6px;padding:0 2px">标签筛选</div>
+    <button class="rtag-filter ${reportTagFilter==='all'?'active':''}" onclick="reportTagFilter='all';renderMain()">
+      全部报告 <span style="font-size:10px;color:var(--text3)">${reports.length}</span>
+    </button>
+    ${REPORT_TAGS.map(t=>`
+      <button class="rtag-filter ${reportTagFilter===t?'active':''}" onclick="reportTagFilter='${t}';renderMain()">
+        <span class="rtag" style="background:${tagColor(t).bg};color:${tagColor(t).text};pointer-events:none">${t}</span>
+        <span style="font-size:10px;color:var(--text3);margin-left:auto">${tagCounts[t]||0}</span>
+      </button>`).join('')}`;
+
+  const cardsHtml = list.length===0
+    ? `<div class="report-empty">
+        <div style="font-size:40px">📄</div>
+        <div style="font-size:14px">${reports.length===0?'暂无调研报告':'没有匹配的报告'}</div>
+        <div style="font-size:12px">${reports.length===0?'点击右上角「上传报告」添加第一份报告':'尝试修改搜索关键词或标签筛选'}</div>
+      </div>`
+    : list.map(r=>{
+        const thumbHtml = r.fileType==='pdf'
+          ? (r.thumb
+              ? `<img src="${r.thumb}" style="width:100%;height:100%;object-fit:cover">`
+              : `<div class="pdf-icon">📄</div>`)
+          : r.fileType==='image'
+          ? `<img src="${r.fileData}" style="width:100%;height:100%;object-fit:cover">`
+          : `<div style="font-size:36px;opacity:.5">🔗</div>`;
+        return`<div class="report-card" onclick="showReportDetail('${r.id}')">
+          <div class="report-card-thumb">${thumbHtml}</div>
+          <div class="report-card-body">
+            <div class="report-card-title">${r.title}</div>
+            <div class="report-card-meta">${r.uploader} · ${r.uploadTime.split(' ')[0]}</div>
+            <div class="report-tags">
+              ${r.tags.map(t=>`<span class="rtag" style="background:${tagColor(t).bg};color:${tagColor(t).text}">${t}</span>`).join('')}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+  container.innerHTML=`<div class="report-view">
+    <div class="report-sidebar">${sidebarHtml}</div>
+    <div class="report-main">
+      <div class="report-toolbar">
+        <div style="display:flex;align-items:center;gap:6px;flex:1;max-width:340px;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:0 10px">
+          <span style="color:var(--text3)">⌕</span>
+          <input id="report-search-val" type="text" placeholder="搜索标题、关键词、标签…" value="${q}"
+            style="border:none;background:transparent;outline:none;font-size:12px;padding:7px 0;flex:1;color:var(--text)"
+            oninput="renderMain()">
+        </div>
+        <span style="font-size:11px;color:var(--text3)">${list.length} 份报告</span>
+        ${canEdit?`<button class="btn primary" onclick="showUploadReportDialog()" style="margin-left:auto">+ 上传报告</button>`:''}
+      </div>
+      ${list.length===0&&reports.length===0
+        ?`<div class="report-empty">
+            <div style="font-size:48px">📄</div>
+            <div style="font-size:15px;font-weight:500">暂无调研报告</div>
+            <div style="font-size:12px">支持上传 PDF、图片或粘贴链接</div>
+            ${canEdit?`<button class="btn primary" onclick="showUploadReportDialog()" style="margin-top:8px">+ 上传第一份报告</button>`:''}
+          </div>`
+        :`<div class="report-grid">${cardsHtml}</div>`}
+    </div>
+  </div>`;
+}
+
+// ── Upload Report Dialog ──
+function showUploadReportDialog(editId){
+  const r = editId ? reports.find(x=>x.id===editId) : null;
+  const tagColor = t => REPORT_TAG_COLORS[t]||{bg:'#f3f4f6',text:'#6b7280'};
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="modal" style="width:600px">
+    <div class="modal-hd">
+      <div class="modal-title">${r?'编辑报告':'上传调研报告'}</div>
+      <button class="close-x" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="fg full"><div class="flabel">报告标题 <span class="req">*</span></div>
+        <input id="rpt-title" type="text" placeholder="如：王者荣耀3月活动用户调研" value="${r?.title||''}"></div>
+      <div class="fg full"><div class="flabel">简介</div>
+        <textarea id="rpt-desc" style="min-height:56px" placeholder="报告内容简介（可选）">${r?.desc||''}</textarea></div>
+      <div class="fg full"><div class="flabel">关键词（用逗号分隔）</div>
+        <input id="rpt-kw" type="text" placeholder="如：用户留存,付费率,活动满意度" value="${r?.keywords||''}"></div>
+      <div class="fg full">
+        <div class="flabel">标签</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="rpt-tag-wrap">
+          ${REPORT_TAGS.map(t=>{
+            const c=tagColor(t);
+            const sel=r&&r.tags.includes(t);
+            return`<div class="rtag" id="rptag-${t.replace(/\s/g,'_')}" style="background:${sel?c.bg:'var(--bg2)'};color:${sel?c.text:'var(--text3)'};border:1px solid ${sel?c.text+'44':'var(--border2)'};cursor:pointer;padding:3px 10px;font-size:11px" onclick="toggleReportTagSel('${t}')">${t}</div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="fg full">
+        <div class="flabel">报告文件${r?'（重新上传可替换）':' <span class="req">*</span>'}</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="btn ${!ov._linkMode?'primary':''}" id="rpt-file-btn" onclick="setRptMode(false)" style="font-size:11px">上传文件（PDF/图片）</button>
+          <button class="btn ${ov._linkMode?'primary':''}" id="rpt-link-btn" onclick="setRptMode(true)" style="font-size:11px">粘贴链接</button>
+        </div>
+        <div id="rpt-file-area">
+          <label style="display:block;border:2px dashed var(--border2);border-radius:7px;padding:14px;text-align:center;cursor:pointer;font-size:12px;color:var(--text2)">
+            <input type="file" accept=".pdf,image/*" style="display:none" id="rpt-file-input" onchange="onRptFileSelect(event)">
+            <span id="rpt-file-label">${r?'点击重新选择文件（当前已有文件）':'点击选择 PDF 或图片文件，最大 20MB'}</span>
+          </label>
+        </div>
+        <div id="rpt-link-area" style="display:none">
+          <input id="rpt-link-val" type="url" placeholder="https://..." value="${r?.fileType==='link'?r.fileData:''}">
+        </div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="saveReport('${editId||''}')">保存</button>
+    </div>
+  </div>`;
+  ov._linkMode=false;
+  ov._selectedTags=new Set(r?.tags||[]);
+  ov._fileData=null; ov._fileType=null; ov._thumb=null;
+  document.body.appendChild(ov);
+}
+
+function setRptMode(linkMode){
+  const ov=document.getElementById('modal-overlay');
+  if(ov) ov._linkMode=linkMode;
+  document.getElementById('rpt-file-area').style.display=linkMode?'none':'';
+  document.getElementById('rpt-link-area').style.display=linkMode?'':'none';
+  document.getElementById('rpt-file-btn').className='btn'+(linkMode?'':' primary');
+  document.getElementById('rpt-link-btn').className='btn'+(linkMode?' primary':'');
+}
+
+function toggleReportTagSel(tag){
+  const ov=document.getElementById('modal-overlay'); if(!ov)return;
+  const sel=ov._selectedTags;
+  const c=REPORT_TAG_COLORS[tag]||{bg:'#f3f4f6',text:'#6b7280'};
+  const el=document.getElementById('rptag-'+tag.replace(/\s/g,'_'));
+  if(sel.has(tag)){
+    sel.delete(tag);
+    if(el){el.style.background='var(--bg2)';el.style.color='var(--text3)';el.style.borderColor='var(--border2)';}
+  } else {
+    sel.add(tag);
+    if(el){el.style.background=c.bg;el.style.color=c.text;el.style.borderColor=c.text+'44';}
+  }
+}
+
+function onRptFileSelect(e){
+  const file=e.target.files[0]; if(!file)return;
+  if(file.size>20*1024*1024){showNotif('文件超过20MB限制',true);return;}
+  const label=document.getElementById('rpt-file-label');
+  if(label) label.textContent=`已选择：${file.name}（${(file.size/1024/1024).toFixed(1)}MB）`;
+  const ov=document.getElementById('modal-overlay'); if(!ov)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    ov._fileData=ev.target.result;
+    ov._fileType=file.type.startsWith('image/')?'image':'pdf';
+    ov._thumb=ov._fileType==='image'?ev.target.result:null;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveReport(editId){
+  const title=(document.getElementById('rpt-title').value||'').trim();
+  if(!title){showNotif('请填写报告标题',true);return;}
+  const ov=document.getElementById('modal-overlay'); if(!ov)return;
+  const desc=document.getElementById('rpt-desc').value||'';
+  const keywords=document.getElementById('rpt-kw').value||'';
+  const tags=[...ov._selectedTags];
+  const linkMode=ov._linkMode;
+  const linkVal=(document.getElementById('rpt-link-val').value||'').trim();
+
+  let fileData=ov._fileData, fileType=ov._fileType, thumb=ov._thumb;
+
+  if(editId){
+    // editing — keep old file if no new one selected
+    const old=reports.find(r=>r.id===editId);
+    if(!fileData&&old){ fileData=old.fileData; fileType=old.fileType; thumb=old.thumb; }
+  }
+
+  if(linkMode){
+    if(!linkVal){showNotif('请填写报告链接',true);return;}
+    fileData=linkVal; fileType='link'; thumb=null;
+  } else if(!fileData){
+    showNotif('请选择报告文件',true);return;
+  }
+
+  const now=ts();
+  if(editId){
+    const idx=reports.findIndex(r=>r.id===editId);
+    if(idx>=0){
+      reports[idx]={...reports[idx],title,desc,keywords,tags,fileData,fileType,thumb,modifier:currentUser.name,modifyTime:now};
+      addLog(`编辑了调研报告「${title}」`);
+      showNotif('报告已更新');
+    }
+  } else {
+    reports.unshift({id:genReportId(),title,desc,keywords,tags,fileData,fileType,thumb,uploader:currentUser.name,uploadTime:now});
+    addLog(`上传了调研报告「${title}」`);
+    showNotif('报告上传成功');
+  }
+  closeModal(); saveData(); renderMain();
+}
+
+// ── Report Detail ──
+function showReportDetail(id){
+  const r=reports.find(x=>x.id===id); if(!r)return;
+  const canEdit=currentUser.role!=='viewer';
+  const tagColor=t=>REPORT_TAG_COLORS[t]||{bg:'#f3f4f6',text:'#6b7280'};
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+
+  let previewHtml='';
+  if(r.fileType==='pdf'){
+    previewHtml=`<div style="width:100%;height:500px;background:#1a1a2e;border-radius:8px;overflow:hidden">
+      <object data="${r.fileData}" type="application/pdf" width="100%" height="100%" style="border:none">
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;flex-direction:column;gap:10px">
+          <div style="font-size:40px">📄</div>
+          <div style="font-size:13px">浏览器不支持内嵌预览</div>
+          <a href="${r.fileData}" download="${r.title}.pdf" class="btn primary" style="text-decoration:none">下载 PDF</a>
+        </div>
+      </object>
+    </div>`;
+  } else if(r.fileType==='image'){
+    previewHtml=`<img src="${r.fileData}" style="width:100%;max-height:500px;object-fit:contain;border-radius:8px;background:#1a1a2e;display:block" alt="${r.title}">`;
+  } else if(r.fileType==='link'){
+    previewHtml=`<div style="background:var(--bg2);border-radius:8px;padding:16px;text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">🔗</div>
+      <div style="font-size:13px;margin-bottom:10px;color:var(--text2)">${r.fileData}</div>
+      <a href="${r.fileData}" target="_blank" class="btn primary" style="text-decoration:none">在新标签页打开</a>
+    </div>`;
+  }
+
+  ov.innerHTML=`<div class="modal" style="width:760px">
+    <div class="modal-hd">
+      <div class="modal-title">${r.title}</div>
+      <button class="close-x" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      ${previewHtml}
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">
+        ${r.tags.map(t=>`<span class="rtag" style="background:${tagColor(t).bg};color:${tagColor(t).text}">${t}</span>`).join('')}
+      </div>
+      ${r.desc?`<div style="font-size:12px;color:var(--text2);line-height:1.7;background:var(--bg2);padding:10px;border-radius:6px">${r.desc}</div>`:''}
+      ${r.keywords?`<div style="font-size:11px;color:var(--text3)">关键词：${r.keywords}</div>`:''}
+      <div style="font-size:11px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px">上传：${r.uploader} · ${r.uploadTime}${r.modifyTime?` · 最后编辑：${r.modifier} ${r.modifyTime}`:''}</div>
+    </div>
+    <div class="modal-ft">
+      ${canEdit&&currentUser.role==='admin'?`<button class="btn danger" style="margin-right:auto" onclick="confirmDeleteReport('${r.id}')">删除</button>`:''}
+      <button class="btn" onclick="closeModal()">关闭</button>
+      ${canEdit?`<a href="${r.fileData}" download="${r.title}" class="btn" style="text-decoration:none" ${r.fileType==='link'?'target="_blank"':''}>下载</a>`:''}
+      ${canEdit?`<button class="btn primary" onclick="closeModal();showUploadReportDialog('${r.id}')">编辑</button>`:''}
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function confirmDeleteReport(id){
+  const r=reports.find(x=>x.id===id); if(!r)return;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box">
+    <div class="confirm-title">确认删除报告</div>
+    <div class="confirm-desc">确定删除「${r.title}」吗？此操作不可恢复。</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="doDeleteReport('${id}')">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function doDeleteReport(id){
+  const r=reports.find(x=>x.id===id);
+  reports=reports.filter(x=>x.id!==id);
+  if(r) addLog(`删除了调研报告「${r.title}」`);
+  closeModal(); showNotif('报告已删除'); saveData(); renderMain();
+}
+
+// ── Report Tag Management (in CollabView) ──
+const REPORT_TAG_PRESETS=[
+  {bg:'#fee2e2',text:'#991b1b'},{bg:'#dbeafe',text:'#1d4ed8'},{bg:'#dcfce7',text:'#166534'},
+  {bg:'#ede9fe',text:'#5b21b6'},{bg:'#fef9c3',text:'#713f12'},{bg:'#ffedd5',text:'#9a3412'},
+  {bg:'#fce7f3',text:'#9d174d'},{bg:'#ccfbf1',text:'#0f766e'},{bg:'#f0fdf4',text:'#14532d'},
+  {bg:'#eff6ff',text:'#1e40af'},{bg:'#fdf4ff',text:'#6b21a8'},{bg:'#fff7ed',text:'#9a3412'}
+];
+
+function showAddReportTagDialog(){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return;}
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  const swatches=REPORT_TAG_PRESETS.map((c,i)=>
+    `<div onclick="selectRptColor(${i})" id="rpc-${i}" style="width:22px;height:22px;border-radius:4px;background:${c.bg};border:2px solid ${i===0?c.text:'transparent'};cursor:pointer"></div>`
+  ).join('');
+  ov._selectedRptColorIdx=0;
+  ov.innerHTML=`<div class="confirm-box" style="width:420px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">新增报告标签</div>
+    <div class="fg full" style="margin-bottom:10px">
+      <div class="flabel">标签名称 <span class="req">*</span></div>
+      <input id="new-rpt-tag" type="text" placeholder="如：竞品分析">
+    </div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">标签颜色</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${swatches}</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddReportTag()">确认新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('new-rpt-tag')?.focus(),50);
+}
+
+function selectRptColor(idx){
+  const ov=document.getElementById('modal-overlay'); if(!ov)return;
+  const old=ov._selectedRptColorIdx;
+  const c=REPORT_TAG_PRESETS[idx];
+  document.getElementById(`rpc-${old}`)?.style.setProperty('border','2px solid transparent');
+  document.getElementById(`rpc-${idx}`)?.style.setProperty('border',`2px solid ${c.text}`);
+  ov._selectedRptColorIdx=idx;
+}
+
+function doAddReportTag(){
+  const name=(document.getElementById('new-rpt-tag').value||'').trim();
+  if(!name){showNotif('标签名称不能为空',true);return;}
+  if(REPORT_TAGS.includes(name)){showNotif(`「${name}」已存在`,true);return;}
+  const ov=document.getElementById('modal-overlay');
+  const c=REPORT_TAG_PRESETS[ov?._selectedRptColorIdx||0];
+  REPORT_TAGS.push(name);
+  REPORT_TAG_COLORS[name]=c;
+  addLog(`新增了报告标签「${name}」`);
+  showNotif(`标签「${name}」已新增`);
+  closeModal(); saveData(); renderMain();
+}
+
+function showEditReportTagDialog(idx){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return;}
+  const oldName=REPORT_TAGS[idx];
+  const curC=REPORT_TAG_COLORS[oldName]||REPORT_TAG_PRESETS[0];
+  const curIdx=REPORT_TAG_PRESETS.findIndex(c=>c.bg===curC.bg);
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  const swatches=REPORT_TAG_PRESETS.map((c,i)=>
+    `<div onclick="selectRptColor(${i})" id="rpc-${i}" style="width:22px;height:22px;border-radius:4px;background:${c.bg};border:2px solid ${i===curIdx?c.text:'transparent'};cursor:pointer"></div>`
+  ).join('');
+  ov._selectedRptColorIdx=curIdx>=0?curIdx:0;
+  ov.innerHTML=`<div class="confirm-box" style="width:420px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">修改报告标签</div>
+    <div class="fg full" style="margin-bottom:10px">
+      <div class="flabel">标签名称 <span class="req">*</span></div>
+      <input id="edit-rpt-tag" type="text" value="${oldName}">
+    </div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">标签颜色</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${swatches}</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doEditReportTag(${idx},'${oldName}')">保存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{const el=document.getElementById('edit-rpt-tag');if(el){el.focus();el.select();}},50);
+}
+
+function doEditReportTag(idx,oldName){
+  const newName=(document.getElementById('edit-rpt-tag').value||'').trim();
+  if(!newName){showNotif('标签名称不能为空',true);return;}
+  if(newName!==oldName&&REPORT_TAGS.includes(newName)){showNotif(`「${newName}」已存在`,true);return;}
+  const ov=document.getElementById('modal-overlay');
+  const c=REPORT_TAG_PRESETS[ov?._selectedRptColorIdx||0];
+  REPORT_TAGS[idx]=newName;
+  REPORT_TAG_COLORS[newName]=c;
+  if(newName!==oldName){
+    delete REPORT_TAG_COLORS[oldName];
+    reports.forEach(r=>{r.tags=r.tags.map(t=>t===oldName?newName:t);});
+  }
+  addLog(`将报告标签「${oldName}」改为「${newName}」`);
+  showNotif('标签已更新');
+  closeModal(); saveData(); renderMain();
+}
+
+function confirmDeleteReportTag(idx){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return;}
+  const name=REPORT_TAGS[idx];
+  const count=reports.filter(r=>r.tags.includes(name)).length;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box">
+    <div class="confirm-title">确认删除标签</div>
+    <div class="confirm-desc">确定删除标签「${name}」吗？${count>0?`<br><span style="color:#d93025">${count} 份报告使用了此标签，删除后标签会从这些报告上移除。</span>`:'该标签暂无报告使用。'}</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="doDeleteReportTag(${idx})">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function doDeleteReportTag(idx){
+  const name=REPORT_TAGS[idx];
+  REPORT_TAGS.splice(idx,1);
+  delete REPORT_TAG_COLORS[name];
+  reports.forEach(r=>{r.tags=r.tags.filter(t=>t!==name);});
+  addLog(`删除了报告标签「${name}」`);
+  showNotif(`标签「${name}」已删除`);
+  closeModal(); saveData(); renderMain();
+}
+// ===================== END REPORT MODULE =====================
 
 // ===================== INIT =====================
 initStatusBar();
