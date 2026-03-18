@@ -2887,31 +2887,162 @@ function onDrop(e,actId){
 }
 function onFileSelect(e,actId){processFiles([...e.target.files], actId);e.target.value='';}
 
-function processFiles(files, actId){
-  const MAX=5*1024*1024;
-  let count=0;
-  files.forEach(file=>{
-    if(file.size>MAX){showNotif(`「${file.name}」超过5MB限制，已跳过`,true);return;}
-    const isImg=file.type.startsWith('image/');
-    const isVid=file.type.startsWith('video/');
-    if(!isImg&&!isVid){showNotif(`「${file.name}」不是图片或视频，已跳过`,true);return;}
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      const att={
-        id:genAttId(), name:file.name,
-        type:isImg?'image':'video',
-        size:file.size, data:ev.target.result,
-        addedBy:currentUser.name, addedAt:ts()
-      };
-      if(!attachments[actId]) attachments[actId]=[];
-      attachments[actId].push(att);
-      refreshAttachList(actId);
-      saveAttachmentsFor(actId);
-      count++;
-      if(count===files.length) showNotif(`成功添加 ${count} 个附件`);
-    };
-    reader.readAsDataURL(file);
+// ─── Supabase Storage helpers ───
+// Images are uploaded to Supabase Storage bucket 'media'
+// Path: {game}/{type}/{attId}_{filename}
+// att.data stores the public URL (not base64) when Storage is available
+
+const STORAGE_BUCKET = 'media';
+
+function storageUrl(path){
+  return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
+}
+
+async function uploadToStorage(path, blob, mimeType){
+  const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + _sbKey,
+      'Content-Type': mimeType,
+      'x-upsert': 'true'
+    },
+    body: blob
   });
+  if(!r.ok){ const t=await r.text(); throw new Error(`Storage 上传失败 ${r.status}: ${t.slice(0,100)}`); }
+  return storageUrl(path);
+}
+
+async function deleteFromStorage(path){
+  if(!path || !_sbUrl || !_sbKey) return;
+  await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + _sbKey }
+  }).catch(()=>{});
+}
+
+// ─── Image compression ───
+// Compress image to max 100KB using canvas
+async function compressImage(file){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      const TARGET = 100 * 1024; // 100KB
+      // Try quality levels until under target
+      const canvas = document.createElement('canvas');
+      // Scale down if very large — max 1200px on longest side
+      let w = img.width, h = img.height;
+      const maxDim = 1200;
+      if(w > maxDim || h > maxDim){
+        if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
+        else { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Binary search for quality
+      let lo = 0.1, hi = 0.92, bestBlob = null;
+      const tryQuality = (q) => new Promise(res => canvas.toBlob(res, 'image/jpeg', q));
+      (async ()=>{
+        // First try high quality
+        let blob = await tryQuality(0.85);
+        if(blob && blob.size <= TARGET){ resolve(blob); return; }
+        // Iterate down
+        for(let q = 0.7; q >= 0.1; q -= 0.1){
+          blob = await tryQuality(q);
+          if(blob && blob.size <= TARGET){ resolve(blob); return; }
+          bestBlob = blob;
+        }
+        resolve(bestBlob); // best effort
+      })();
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+// ─── Process uploaded files ───
+async function processFiles(files, actId){
+  const MAX = 50 * 1024 * 1024; // 50MB limit for videos
+  const act = activities.find(a=>a.id===actId);
+  const game = act?.game||'未知游戏';
+  const type = act?.type||'未知类型';
+
+  let uploaded = 0;
+  const total = files.filter(f=>f.type.startsWith('image/')||f.type.startsWith('video/')).length;
+  if(!total){ showNotif('没有可用的图片或视频文件',true); return; }
+
+  showNotif(`正在处理 ${total} 个文件…`);
+
+  for(const file of files){
+    const isImg = file.type.startsWith('image/');
+    const isVid = file.type.startsWith('video/');
+    if(!isImg && !isVid){ showNotif(`「${file.name}」不是图片或视频，已跳过`,true); continue; }
+    if(file.size > MAX){ showNotif(`「${file.name}」超过50MB限制，已跳过`,true); continue; }
+
+    const attId = genAttId();
+    let attData = null;
+    let attSize = file.size;
+    let attType = isImg ? 'image' : 'video';
+
+    if(isImg){
+      // Compress image to ≤100KB
+      const compressed = await compressImage(file);
+      if(!compressed){ showNotif(`「${file.name}」压缩失败，已跳过`,true); continue; }
+      attSize = compressed.size;
+
+      if(_sbReady && _sbUrl && _sbKey){
+        // Upload to Supabase Storage
+        try{
+          const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
+          const path = `${game}/${type}/${attId}_${safeName}`;
+          attData = await uploadToStorage(path, compressed, 'image/jpeg');
+          // Store path for deletion later
+          const att = { id:attId, name:file.name, type:'image', size:attSize,
+                        data:attData, storagePath:path, addedBy:currentUser.name, addedAt:ts() };
+          if(!attachments[actId]) attachments[actId]=[];
+          attachments[actId].push(att);
+          refreshAttachList(actId);
+          // Save metadata to database (URL, not base64)
+          saveAttachmentsFor(actId);
+          uploaded++;
+          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至100KB以内）`);
+          continue;
+        }catch(e){
+          console.warn('Storage upload failed, falling back to base64', e);
+          showNotif(`图片上传云端失败，改用本地存储: ${e.message}`, true);
+          // Fall through to base64 fallback
+        }
+      }
+      // Fallback: store as base64 (localStorage only)
+      const reader = new FileReader();
+      await new Promise(resolve=>{
+        reader.onload = ev=>{
+          attData = ev.target.result;
+          resolve();
+        };
+        reader.readAsDataURL(compressed);
+      });
+    } else {
+      // Video: read as base64 (or could upload to storage too)
+      const reader = new FileReader();
+      await new Promise(resolve=>{
+        reader.onload = ev=>{ attData = ev.target.result; resolve(); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const att = { id:attId, name:file.name, type:attType,
+                  size:attSize, data:attData, addedBy:currentUser.name, addedAt:ts() };
+    if(!attachments[actId]) attachments[actId]=[];
+    attachments[actId].push(att);
+    refreshAttachList(actId);
+    saveAttachmentsFor(actId);
+    uploaded++;
+    if(uploaded===total) showNotif(`成功添加 ${uploaded} 个附件`);
+  }
 }
 
 function showAddVideoUrl(actId){
@@ -2951,8 +3082,13 @@ function doAddVideoUrl(actId){
 
 function deleteAttachment(actId, attId){
   if(!attachments[actId]) return;
+  const att = attachments[actId].find(x=>x.id===attId);
   attachments[actId]=attachments[actId].filter(x=>x.id!==attId);
   if(!attachments[actId].length) delete attachments[actId];
+  // Delete from Storage if it was uploaded there
+  if(att && att.storagePath && _sbReady && _sbUrl && _sbKey){
+    deleteFromStorage(att.storagePath).catch(()=>{});
+  }
   refreshAttachList(actId);
   saveAttachmentsFor(actId);
   showNotif('附件已删除');
@@ -3125,7 +3261,6 @@ async function exportAllImages(game){
   showNotif(`正在打包 ${items.length} 张图片，请稍候…`);
 
   try{
-    // Load JSZip dynamically
     await new Promise((resolve,reject)=>{
       if(window.JSZip){resolve();return;}
       const s=document.createElement('script');
@@ -3136,13 +3271,26 @@ async function exportAllImages(game){
     const zip=new JSZip();
     const folderName=game==='all'?'全部游戏':game;
     const folder=zip.folder(folderName);
-    items.forEach(({att,act},i)=>{
-      const base64=att.data.split(',')[1];
-      const ext=att.name.includes('.')?att.name.split('.').pop():'jpg';
-      const safe=(s)=>s.replace(/[\/\\:*?"<>|]/g,'_').slice(0,30);
-      const fname=`${String(i+1).padStart(3,'0')}_${safe(act?.name||'未知活动')}.${ext}`;
-      folder.file(fname, base64, {base64:true});
-    });
+    const safe=(s)=>s.replace(/[\/\\:*?"<>|]/g,'_').slice(0,30);
+
+    for(let i=0;i<items.length;i++){
+      const {att,act}=items[i];
+      const fname=`${String(i+1).padStart(3,'0')}_${safe(act?.name||'未知活动')}.jpg`;
+      if(att.data.startsWith('data:')){
+        // base64 stored locally
+        const base64=att.data.split(',')[1];
+        folder.file(fname, base64, {base64:true});
+      } else {
+        // URL from Supabase Storage — fetch the blob
+        try{
+          const resp=await fetch(att.data);
+          const blob=await resp.blob();
+          folder.file(fname, blob);
+        }catch(e){
+          console.warn('Failed to fetch image for export',att.data,e);
+        }
+      }
+    }
     const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:3}});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
@@ -3152,20 +3300,8 @@ async function exportAllImages(game){
     URL.revokeObjectURL(url);
     showNotif(`✓ 已打包导出 ${items.length} 张图片`);
   }catch(e){
-    // Fallback: download one by one
-    console.warn('JSZip failed, downloading individually',e);
-    showNotif(`正在逐张下载 ${items.length} 张图片…`);
-    for(let i=0;i<items.length;i++){
-      const {att,act}=items[i];
-      const ext=att.data.split(';')[0].split('/')[1]||'jpg';
-      const safe=(s)=>s.replace(/[\/\\:*?"<>|]/g,'_').slice(0,20);
-      const a=document.createElement('a');
-      a.href=att.data;
-      a.download=`${String(i+1).padStart(3,'0')}_${safe(act?.name||'图片')}.${ext}`;
-      a.click();
-      await new Promise(r=>setTimeout(r,400));
-    }
-    showNotif(`✓ 已触发下载 ${items.length} 张图片`);
+    console.warn('Export failed',e);
+    showNotif(`导出失败：${e.message}`,true);
   }
 }
 
