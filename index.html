@@ -1052,17 +1052,24 @@ async function loadData(){
   if(local && local._snapshot)    applySnapshot(local._snapshot);
   if(local && local._attachments) Object.assign(attachments, local._attachments);
 
-  if(local && local._sbUrl && local._sbKey){
-    _sbUrl   = local._sbUrl;
-    _sbKey   = local._sbKey;
-    _sbTable = local._sbTable || 'scheduler_data';
+  // Priority: hardcoded values in HTML > localStorage config
+  // This ensures ALL users connect to the same Supabase even without localStorage config
+  const effectiveUrl = _sbUrl || (local && local._sbUrl) || '';
+  const effectiveKey = _sbKey || (local && local._sbKey) || '';
+  const effectiveTable = _sbTable || (local && local._sbTable) || 'scheduler_data';
+
+  if(effectiveUrl && effectiveKey && window.supabase){
+    _sbUrl   = effectiveUrl;
+    _sbKey   = effectiveKey;
+    _sbTable = effectiveTable;
+    // Ensure getSB() picks up the values
+    _sb = null;
     try{
       const cloud = await sbReadRow('main_data');
       if(cloud && cloud.savedAt){
-        const localTs = local._snapshot?.savedAt||'';
+        const localTs = local?._snapshot?.savedAt||'';
         if(!localTs || cloud.savedAt >= localTs) applySnapshot(cloud);
       }
-      // Load attachments in background — non-blocking
       sbReadAttachments().catch(e=>console.warn('Attachment load failed',e));
       _sbReady = true;
       setBarState('cloud','云端已连接（Supabase）');
