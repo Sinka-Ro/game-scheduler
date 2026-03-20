@@ -2121,7 +2121,7 @@ function renderListView(container){
   const active=activities.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now).length;
   const upcoming=activities.filter(a=>new Date(a.startTime)>now).length;
   const ended=activities.filter(a=>new Date(a.endTime)<now).length;
-  const canEdit=currentUser.role!=='viewer',canDel=currentUser.role==='admin';
+  const canEdit=currentUser.role!=='viewer',canDel=currentUser.role!=='viewer';
 
   container.innerHTML=`
   <div class="list-view">
@@ -2204,7 +2204,7 @@ function refreshTable(){
   const rc=document.getElementById('resultCount');
   if(rc)rc.textContent=`共 ${list.length} 条`;
   const tb=document.getElementById('tableBody');if(!tb)return;
-  const canEdit=currentUser.role!=='viewer',canDel=currentUser.role==='admin';
+  const canEdit=currentUser.role!=='viewer',canDel=currentUser.role!=='viewer';
   if(!list.length){tb.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">暂无符合条件的活动记录</td></tr>`;return;}
   tb.innerHTML=list.map(a=>{
     const st=getStatus(a);
@@ -3227,7 +3227,7 @@ function updateCyclePreview(){
   const sDate=new Date(sVal), eDate=new Date(eVal);
   if(sDate>=eDate){preview.textContent='开始时间须早于结束时间';return;}
   const dur=Math.ceil((eDate-sDate)/86400000); // activity duration in days
-  const step=dur+gap+1; // days to shift each cycle: duration + gap days
+  const step=dur+gap; // gap=0:seamless, gap=1:1 day between
   const untilDate=new Date(until+'T23:59:59');
   let count=0, cur=new Date(sDate);
   while(cur<=untilDate&&count<50){count++;cur=new Date(cur.getTime()+step*86400000);}
@@ -3288,7 +3288,7 @@ function saveActivity(){
     const sDate    = new Date(s);
     const eDate    = new Date(e);
     const dur      = Math.ceil((eDate-sDate)/86400000);
-    const step     = dur+gap+1; // days per cycle
+    const step     = dur+gap; // gap=0:seamless, gap=1:1 day between
     const untilDate= new Date(until+'T23:59:59');
     const phOffset = ph ? (new Date(s)-new Date(ph)) : null; // preheat offset in ms
 
@@ -3414,7 +3414,7 @@ function showDetail(id){
       <div style="font-size:11px;color:var(--text3);padding-top:8px;border-top:1px solid var(--border)">最后修改：${a.modifier} · ${a.modifyTime}</div>
     </div>
     <div class="modal-ft">
-      ${canEdit&&currentUser.role==='admin'?`<button class="btn danger" style="margin-right:auto" onclick="closeModal();confirmDelete('${getActivityRef(a)}')">删除</button>`:''}
+      ${canEdit?`<button class="btn danger" style="margin-right:auto" onclick="closeModal();confirmDelete('${getActivityRef(a)}')">删除</button>`:''}
       <button class="btn" onclick="closeModal()">关闭</button>
       ${canEdit?`<button class="btn" onclick="closeModal();copyActivity('${getActivityRef(a)}')">复制活动</button>`:''}
       ${canEdit?`<button class="btn primary" onclick="closeModal();showModal('edit','${getActivityRef(a)}')">编辑</button>`:''}
