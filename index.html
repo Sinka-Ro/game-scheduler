@@ -3235,6 +3235,35 @@ function updateCyclePreview(){
   preview.innerHTML=`🔁 ${gapDesc}，每次活动持续 <strong>${dur}</strong> 天，截止 ${until} 共创建 <strong>${count}</strong> 条活动`;
 }
 
+// Generate a unique activity ID that works for any game/type name.
+// batchIds: array of IDs already created in the same batch (for cycle mode).
+function generateUniqueActId(g, t, dc, batchIds){
+  const gcMap={'王者荣耀':'WZRY','和平精英':'HPJY','原神':'YS','明日方舟':'MRF','崩坏：星穹铁道':'BHXQTD','第五人格':'DWRG','蛋仔派对':'DZPD'};
+  const tcMap={'充值返利':'RECHARGE','版本更新':'UPDATE','节日活动':'EVENT','赛事活动':'ESPORTS','福利发放':'WELFARE','跨界联动':'COLLAB','新服开放':'NEWSVR','限时折扣':'DISCOUNT'};
+  // Derive a short uppercase code from an arbitrary string.
+  // Prefers ASCII letters; falls back to a 4-digit hex hash of the first few CJK chars.
+  function abbr(str, fb){
+    if(!str) return fb;
+    const asc=str.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+    if(asc.length>=2) return asc.slice(0,8);
+    let h=0; Array.from(str).slice(0,4).forEach(c=>{h=(h*31+c.codePointAt(0))&0xFFFF;});
+    return h.toString(16).toUpperCase().padStart(4,'0');
+  }
+  const gCode=gcMap[g]||abbr(g,'GAME');
+  const tCode=tcMap[t]||abbr(t,'ACT');
+  const prefix=`${gCode}-${tCode}-${dc}-`;
+  // Find max existing seq across ALL activity IDs with this prefix (including current batch).
+  let maxSeq=0;
+  const allIds=activities.map(a=>a.id).concat(batchIds||[]);
+  allIds.forEach(id=>{
+    if(id&&id.startsWith(prefix)){
+      const n=parseInt(id.slice(prefix.length))||0;
+      if(n>maxSeq) maxSeq=n;
+    }
+  });
+  return `${prefix}${String(maxSeq+1).padStart(3,'0')}`;
+}
+
 function saveActivity(){
   const g=document.getElementById('f-game').value;
   const t=document.getElementById('f-type').value;
@@ -3256,8 +3285,6 @@ function saveActivity(){
   if(!channels.length){showNotif('请至少选择一个活动渠道',true);return}
 
   const now=ts();
-  const gc={'王者荣耀':'WZRY','和平精英':'HPJY','原神':'YS','明日方舟':'MRF','崩坏：星穹铁道':'BHXQTD','第五人格':'DWRG','蛋仔派对':'DZPD'};
-  const tc={'充值返利':'RECHARGE','版本更新':'UPDATE','节日活动':'EVENT','赛事活动':'ESPORTS','福利发放':'WELFARE','跨界联动':'COLLAB','新服开放':'NEWSVR','限时折扣':'DISCOUNT'};
 
   if(editingId){
     // Edit mode — single update
@@ -3307,8 +3334,7 @@ function saveActivity(){
       const cycleStart=new Date(sDate.getTime()+curShift*86400000);
       if(cycleStart>untilDate || created>=50) break;
       const dc=cycleStart.toISOString().split('T')[0].replace(/-/g,'');
-      const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+newItems.length+1).padStart(3,'0');
-      const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
+      const newId=generateUniqueActId(g, t, dc, newItems.map(i=>i.id));
       const newStart=shiftDateStr(s, curShift);
       const newEnd  =shiftDateStr(e, curShift);
       const newPh   =ph&&phOffset!==null ? shiftDateStr(ph, curShift) : ph;
@@ -3324,8 +3350,7 @@ function saveActivity(){
     // Single creation
     ensureGameTypeVisible(g, t);
     const dc=s.split(' ')[0].replace(/-/g,'');
-    const seq=String(activities.filter(a=>a.game===g&&a.type===t).length+1).padStart(3,'0');
-    const newId=`${gc[g]||'GAME'}-${tc[t]||'ACT'}-${dc}-${seq}`;
+    const newId=generateUniqueActId(g, t, dc, []);
     const createdActivity = normalizeActivity({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
     activities.unshift(createdActivity);
     addLog(`新增了《${g}》${n}`, {undo:{kind:'activity_create', refs:[getActivityRef(createdActivity)]}});
