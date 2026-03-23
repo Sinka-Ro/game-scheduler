@@ -1119,6 +1119,18 @@ async function refreshCloudState(opts){
     }
     return false;
   }
+
+  // BUG2 FIX: if we have a pending save, flush it NOW before reading cloud
+  // Otherwise we might apply remote data that doesn't include our unsaved changes,
+  // then our save timer fires and overwrites with a snapshot that lost remote changes
+  if(_saveTimer){
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+    try{ await _doSave(); }catch(e){ console.warn('Pre-refresh flush failed', e); }
+    // _doSave already reads+merges+writes, so we're done — no need to apply cloud again
+    return true;
+  }
+
   _syncBusy = true;
   try{
     const cloud = await sbReadRow('main_data');
@@ -1130,8 +1142,10 @@ async function refreshCloudState(opts){
     if(!changed) return false;
     const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
     const ownAttachmentWrite = nextAttSig && nextAttSig === _lastLocalAttachmentSig;
-    applySnapshot(cloud);
-    persistSnapshotToLocal(cloud);
+
+    // BUG1 FIX: use merge mode — never discard local-only activities
+    applySnapshot(cloud, { merge: true });
+    persistSnapshotToLocal(buildSnapshot());
     _syncLastMainRev = nextRev;
     _syncLastAttachmentSig = nextAttSig;
     updateTopbarUser();
@@ -1372,9 +1386,35 @@ function buildSnapshot(){
            _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
 }
 
-function applySnapshot(d){
+// ── Merge two activity arrays by _akey ──
+// Activities present in BOTH: remote wins (it has the latest edit)
+// Activities ONLY in local: keep (they're unsaved additions)
+// Activities ONLY in remote: keep (added by someone else)
+function mergeActivities(localActs, remoteActs){
+  const remoteMap = new Map();
+  (remoteActs||[]).forEach(a=>{ const k=getActivityRef(normalizeActivity(a)); if(k) remoteMap.set(k,normalizeActivity(a)); });
+  const localMap = new Map();
+  (localActs||[]).forEach(a=>{ const k=getActivityRef(a); if(k) localMap.set(k,a); });
+
+  // Start with all remote activities (remote wins for shared records)
+  const merged = [...remoteMap.values()];
+  // Add local-only activities (not yet pushed to cloud)
+  localMap.forEach((act, key)=>{
+    if(!remoteMap.has(key)) merged.unshift(normalizeActivity(act));
+  });
+  return merged;
+}
+
+function applySnapshot(d, opts){
   if(!d) return false;
-  if(Array.isArray(d.activities)) activities=d.activities.map(normalizeActivity);
+  const merge = opts && opts.merge;
+  if(Array.isArray(d.activities)){
+    if(merge && activities.length > 0){
+      activities = mergeActivities(activities, d.activities);
+    } else {
+      activities = d.activities.map(normalizeActivity);
+    }
+  }
   if(Array.isArray(d.GAMES)&&d.GAMES.length) GAMES=d.GAMES;
   if(Array.isArray(d.ACT_TYPES)&&d.ACT_TYPES.length) ACT_TYPES=d.ACT_TYPES;
   if(d.TYPE_COLORS)     Object.assign(TYPE_COLORS,d.TYPE_COLORS);
@@ -1472,14 +1512,12 @@ async function loadData(){
     _sbUrl   = effectiveUrl;
     _sbKey   = effectiveKey;
     _sbTable = effectiveTable;
-    // Ensure getSB() picks up the values
     _sb = null;
     try{
       const cloud = await sbReadRow('main_data');
       if(cloud && cloud.savedAt){
-        const localRev = getSnapshotRevision(local?._snapshot);
-        const cloudRev = getSnapshotRevision(cloud);
-        if(!localRev || cloudRev >= localRev) applySnapshot(cloud);
+        // BUG3 FIX: always merge on load — preserves any local-only data
+        applySnapshot(cloud, { merge: true });
       }
       _sbReady = true;
       if(cloud) persistSnapshotToLocal(cloud);
@@ -1532,27 +1570,56 @@ async function saveAttachmentsFor(actId){
 
 async function _doSave(){
   _saveTimer = null;
-  const snapshot = buildSnapshot(); // main data only, no attachments
-  _lastLocalSaveRev = getSnapshotRevision(snapshot);
-  let savedToCloud = false;
+  if(!_sbReady||!_sbUrl||!_sbKey){
+    // Local only — just persist
+    const snapshot = buildSnapshot();
+    _lastLocalSaveRev = getSnapshotRevision(snapshot);
+    persistSnapshotToLocal(snapshot);
+    updateBarTs();
+    setBarState('local');
+    return;
+  }
 
-  // Always save locally first
-  persistSnapshotToLocal(snapshot);
-  updateBarTs();
-
-  if(!_sbReady||!_sbUrl||!_sbKey){ setBarState('local'); return; }
   setBarState('saving');
   try{
+    // BUG4 FIX: read latest cloud FIRST, merge our local changes on top, then write
+    // This prevents overwriting a teammate's data that arrived while we were editing
+    let base = null;
+    try{ base = await sbReadRow('main_data'); }catch(e){ console.warn('Pre-save read failed, writing without merge', e); }
+
+    let finalActivities;
+    if(base && base.savedAtMs){
+      // Merge: cloud is base, our local additions/edits are the diff
+      finalActivities = mergeActivities(activities, base.activities||[]);
+    } else {
+      finalActivities = activities.map(normalizeActivity);
+    }
+
+    // Temporarily set merged activities, build snapshot, then restore
+    const savedActivities = activities;
+    activities = finalActivities;
+    const snapshot = buildSnapshot();
+    activities = savedActivities; // restore (renderMain will use current in-memory state)
+
+    _lastLocalSaveRev = getSnapshotRevision(snapshot);
+    persistSnapshotToLocal(snapshot);
+    updateBarTs();
+
     await sbUpsertRow('main_data', snapshot);
-    savedToCloud = true;
     _syncLastMainRev = _lastLocalSaveRev;
     _syncLastAttachmentSig = getAttachmentsSignature(attachments);
     setBarState('saved',`已同步到云端 · ${ts()}`);
+    // After a successful save, update in-memory activities to match what was saved
+    // so subsequent saves don't create a new merge conflict with the same data
+    activities = finalActivities;
+    flushDeferredCloudRefresh();
   }catch(e){
     console.warn('Supabase save failed',e);
+    // Still save locally
+    const snapshot = buildSnapshot();
+    persistSnapshotToLocal(snapshot);
     setBarState('error',`云端同步失败（本地已保存）: ${e.message}`);
   }
-  if(savedToCloud) flushDeferredCloudRefresh();
 }
 
 // ─── Storage Setup Dialog ───
