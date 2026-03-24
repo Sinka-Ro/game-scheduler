@@ -903,6 +903,10 @@ let attachments = {};
 // fileData: base64 (pdf/image) or URL string (link)
 // thumb: base64 image for preview (first page screenshot for pdf, or image itself)
 let reports = [];
+// Tombstone set — tracks _akey of deleted activities so merge never resurrects them
+// Entries: { key: string, deletedAt: number (ms timestamp) }
+// Pruned after 30 days to keep snapshot small
+let _deletedKeys = {}; // { [_akey]: deletedAtMs }
 // report tag definitions
 let REPORT_TAGS = ['竞品分析','用户调研','市场报告','版本复盘','活动复盘','行业趋势','用户画像','数据报告'];
 let REPORT_TAG_COLORS = {
@@ -1378,27 +1382,39 @@ function showCollabShareDialog(shareUrl){
 function buildSnapshot(){
   // Attachments saved separately — keep main snapshot small
   const revision = Date.now();
+  // Prune tombstones older than 30 days to keep snapshot lean
+  const cutoff = Date.now() - 30*24*60*60*1000;
+  const prunedDeleted = {};
+  Object.entries(_deletedKeys).forEach(([k,ts])=>{ if(ts>cutoff) prunedDeleted[k]=ts; });
+  _deletedKeys = prunedDeleted;
   return { activities:activities.map(normalizeActivity), GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300),
            reports, REPORT_TAGS, REPORT_TAG_COLORS,
+           _deletedKeys,
            savedAt:ts(), savedAtMs:revision,
            _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
 }
 
-// ── Merge two activity arrays by _akey ──
-// Activities present in BOTH: remote wins (it has the latest edit)
-// Activities ONLY in local: keep (they're unsaved additions)
-// Activities ONLY in remote: keep (added by someone else)
-function mergeActivities(localActs, remoteActs){
+// Merge two activity arrays — local wins for additions, remote wins for edits,
+// tombstones (_deletedKeys) prevent deleted items from being resurrected
+function mergeActivities(localActs, remoteActs, deletedKeys){
+  const tombstones = deletedKeys || _deletedKeys || {};
   const remoteMap = new Map();
-  (remoteActs||[]).forEach(a=>{ const k=getActivityRef(normalizeActivity(a)); if(k) remoteMap.set(k,normalizeActivity(a)); });
+  (remoteActs||[]).forEach(a=>{
+    const norm = normalizeActivity(a);
+    const k = getActivityRef(norm);
+    if(k && !tombstones[k]) remoteMap.set(k, norm);
+  });
   const localMap = new Map();
-  (localActs||[]).forEach(a=>{ const k=getActivityRef(a); if(k) localMap.set(k,a); });
+  (localActs||[]).forEach(a=>{
+    const k = getActivityRef(a);
+    if(k && !tombstones[k]) localMap.set(k, a);
+  });
 
   // Start with all remote activities (remote wins for shared records)
   const merged = [...remoteMap.values()];
-  // Add local-only activities (not yet pushed to cloud)
+  // Add local-only activities (not yet pushed to cloud — new additions)
   localMap.forEach((act, key)=>{
     if(!remoteMap.has(key)) merged.unshift(normalizeActivity(act));
   });
@@ -1408,11 +1424,21 @@ function mergeActivities(localActs, remoteActs){
 function applySnapshot(d, opts){
   if(!d) return false;
   const merge = opts && opts.merge;
+
+  // Always merge tombstones from incoming snapshot — union of all clients' deletions
+  if(d._deletedKeys && typeof d._deletedKeys === 'object'){
+    Object.entries(d._deletedKeys).forEach(([k,ts])=>{
+      if(!_deletedKeys[k] || ts > _deletedKeys[k]) _deletedKeys[k] = ts;
+    });
+  }
+
   if(Array.isArray(d.activities)){
     if(merge && activities.length > 0){
-      activities = mergeActivities(activities, d.activities);
+      // Pass merged tombstone set so merge respects all known deletions
+      activities = mergeActivities(activities, d.activities, _deletedKeys);
     } else {
-      activities = d.activities.map(normalizeActivity);
+      // Full replace — still filter out tombstoned items
+      activities = d.activities.map(normalizeActivity).filter(a=>!_deletedKeys[getActivityRef(a)]);
     }
   }
   if(Array.isArray(d.GAMES)&&d.GAMES.length) GAMES=d.GAMES;
@@ -1589,10 +1615,17 @@ async function _doSave(){
 
     let finalActivities;
     if(base && base.savedAtMs){
-      // Merge: cloud is base, our local additions/edits are the diff
-      finalActivities = mergeActivities(activities, base.activities||[]);
+      // Merge: our local state is authoritative for additions/edits
+      // Tombstones ensure deleted items from cloud don't come back
+      // Also absorb any tombstones from cloud snapshot
+      if(base._deletedKeys && typeof base._deletedKeys==='object'){
+        Object.entries(base._deletedKeys).forEach(([k,ts])=>{
+          if(!_deletedKeys[k]||ts>_deletedKeys[k]) _deletedKeys[k]=ts;
+        });
+      }
+      finalActivities = mergeActivities(activities, base.activities||[], _deletedKeys);
     } else {
-      finalActivities = activities.map(normalizeActivity);
+      finalActivities = activities.map(normalizeActivity).filter(a=>!_deletedKeys[getActivityRef(a)]);
     }
 
     // Temporarily set merged activities, build snapshot, then restore
@@ -3977,9 +4010,15 @@ function confirmDelete(id){
 
 function doDelete(id){
   const a=findActivityByRef(id);
+  if(!a){ closeModal(); return; }
+  const key = getActivityRef(a);
+  // Record tombstone BEFORE filtering — so merge never brings this back
+  if(key) _deletedKeys[key] = Date.now();
   activities=activities.filter(x=>getActivityRef(x)!==id && x.id!==id);
   if(a)addLog(`删除了《${a.game}》${a.name}`, {undo:{kind:'activity_delete', activity:deepClone(a)}});
-  closeModal();showNotif('删除成功');renderMain();
+  closeModal();showNotif('删除成功');
+  saveData(); // save immediately so tombstone reaches cloud ASAP
+  renderMain();
 }
 
 
