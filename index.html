@@ -504,7 +504,7 @@ let GAME_CAT_TEXT={
 let currentUser={id:'',name:'',role:'viewer',email:''};
 let currentTab='calendar';
 let calGame='王者荣耀';
-let calYear=2026, calMonth=2;
+let calYear=new Date().getFullYear(), calMonth=new Date().getMonth();
 let activeGameFilter='all', activeTypeFilter='all';
 let editingId=null;
 let mediaGame='all';
@@ -922,8 +922,8 @@ let REPORT_TAG_COLORS = {
 let reportTagFilter = 'all'; // current filter in report view
 
 // ===================== UTILS =====================
-const TODAY_STR='2026-03-17';
-const TODAY=new Date(TODAY_STR);
+const TODAY=(()=>{const d=new Date();d.setHours(0,0,0,0);return d;})();
+const TODAY_STR=(()=>{const d=TODAY;return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;})();
 
 // ===================== STORAGE LAYER =====================
 // 双轨存储：localStorage 本地兜底（刷新不丢失）+ 可选 Supabase 云端（多人同步）
@@ -2167,6 +2167,7 @@ function renderCalendarView(container){
         <button class="mnav-btn" onclick="changeMonth(1)">›</button>
         <button class="btn sm" onclick="goToToday()" style="margin-left:4px">今天</button>
         <button class="btn sm" onclick="showModal('add')" style="margin-left:4px">+ 新增</button>
+        <button class="btn sm" onclick="exportCalendarExcel()" style="margin-left:4px">📥 导出Excel</button>
       </div>
     </div>
     <div class="gantt-container" id="ganttContainer">
@@ -2209,6 +2210,191 @@ function goToToday(){
   persistUiState();
   renderMain();
 }
+
+// ===================== EXPORT CALENDAR TO EXCEL =====================
+function exportCalendarExcel(){
+  const year=calYear, month=calMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const mNames=['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+  const gameActs=activities.filter(a=>a.game===calGame);
+  const cats=GAME_CATS[calGame]||[];
+  const catBgColors=(GAME_CAT_COLORS[calGame]||[]);
+  const catTxColors=(GAME_CAT_TEXT[calGame]||[]);
+  const DOW_ZH=['日','一','二','三','四','五','六'];
+
+  // Build days array
+  const days=[];
+  for(let d=1;d<=daysInMonth;d++){
+    const dt=new Date(year,month,d);
+    const dow=dt.getDay();
+    days.push({d,dow,isWe:dow===0||dow===6,isToday:year===TODAY.getFullYear()&&month===TODAY.getMonth()&&d===TODAY.getDate()});
+  }
+
+  // Overlap detection and sub-row packing (same as calendar render)
+  function actsOverlap(a,b){
+    const mS=new Date(year,month,1),mE=new Date(year,month,daysInMonth,23,59,59);
+    const as=new Date(a.startTime),ae=new Date(a.endTime),bs=new Date(b.startTime),be=new Date(b.endTime);
+    const vAs=as<mS?mS:as,vAe=ae>mE?mE:ae,vBs=bs<mS?mS:bs,vBe=be>mE?mE:be;
+    if(vAs>mE||vAe<mS||vBs>mE||vBe<mS)return false;
+    return vAs<=vBe&&vBs<=vAe;
+  }
+  function packSubRows(acts){
+    const rows=[];
+    acts.forEach(act=>{
+      let placed=false;
+      for(const r of rows){if(!r.some(e=>actsOverlap(act,e))){r.push(act);placed=true;break;}}
+      if(!placed)rows.push([act]);
+    });
+    return rows;
+  }
+
+  // Build row items identical to renderCalendarView
+  const rowItems=[];
+  cats.forEach((catDef,ci)=>{
+    rowItems.push({type:'cat',label:catDef.cat,ci});
+    catDef.rows.forEach(rowDef=>{
+      const rowActs=gameActs.filter(a=>rowDef.types.includes(a.type));
+      const visActs=rowActs.filter(a=>{
+        const s=new Date(a.startTime),e=new Date(a.endTime);
+        return s<=new Date(year,month,daysInMonth,23,59,59)&&e>=new Date(year,month,1);
+      });
+      const subRows=visActs.length>0?packSubRows(visActs):[];
+      if(subRows.length===0){
+        rowItems.push({type:'row',label:rowDef.label,acts:[],ci,subRowIdx:0,totalSubRows:1});
+      }else{
+        subRows.forEach((srActs,sri)=>{
+          rowItems.push({type:'row',label:sri===0?rowDef.label:`↳ 续行${sri+1}`,acts:srActs,ci,subRowIdx:sri,totalSubRows:subRows.length});
+        });
+      }
+    });
+  });
+
+  // Color utilities
+  function lighten(hex,amt=0.55){
+    hex=hex.replace('#','');
+    if(hex.length===3)hex=hex.split('').map(c=>c+c).join('');
+    const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);
+    return '#'+[r,g,b].map(v=>Math.round(v+(255-v)*amt).toString(16).padStart(2,'0')).join('');
+  }
+
+  // Build spans for each row item: [{sd, ed, act, isPreheat}]
+  function buildSpans(item){
+    const mS=new Date(year,month,1),mE=new Date(year,month,daysInMonth,23,59,59);
+    const spans=[];
+    item.acts.forEach(act=>{
+      const s=new Date(act.startTime),e=new Date(act.endTime);
+      if(s<=mE&&e>=mS){
+        const sd=Math.max(1,s<mS?1:s.getDate());
+        const ed=Math.min(daysInMonth,e>mE?daysInMonth:e.getDate());
+        spans.push({sd,ed,act,isPreheat:false});
+      }
+      if(act.preheat){
+        const ps=new Date(act.preheat),pe=new Date(act.startTime);
+        if(ps<mE&&pe>mS){
+          const psd=Math.max(1,ps<mS?1:ps.getDate());
+          const ped=Math.min(daysInMonth,pe>mE?daysInMonth:Math.max(1,pe.getDate()-1));
+          if(psd<=ped)spans.push({sd:psd,ed:ped,act,isPreheat:true});
+        }
+      }
+    });
+    return spans;
+  }
+
+  // ── Generate HTML that Excel can open preserving merged cells & colors ──
+  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>${calGame} ${year}年${mNames[month]}</x:Name>
+<x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<style>
+tr   { height:24pt; }
+td,th{ font-family:"Microsoft YaHei",Arial,sans-serif; font-size:9pt; border:0.5pt solid #d0d0ce; vertical-align:middle; }
+</style></head><body>
+<table border="1" cellspacing="0" cellpadding="3">`;
+
+  const totalCols = 1 + daysInMonth;
+
+  // ── Row 1: Title ──
+  html+=`<tr style="height:30pt"><td colspan="${totalCols}" style="font-size:13pt;font-weight:bold;background:#5046e4;color:#ffffff;text-align:center;border:1pt solid #3730a3;">${calGame} 排期日历 &nbsp;${year}年${mNames[month]}</td></tr>`;
+
+  // ── Row 2: Day headers ──
+  html+=`<tr style="height:36pt"><td style="font-weight:bold;background:#ece9ff;color:#3730a3;text-align:center;min-width:90pt;">活动类型</td>`;
+  days.forEach(day=>{
+    const bg=day.isToday?'#e8e6ff':day.isWe?'#fff0f0':'#f7f7f6';
+    const tc=day.isToday?'#5046e4':day.isWe?'#d93025':'#595959';
+    const fw=day.isToday?'bold':'normal';
+    html+=`<td style="text-align:center;background:${bg};color:${tc};font-weight:${fw};min-width:28pt;width:28pt;">${day.d}<br>${DOW_ZH[day.dow]}</td>`;
+  });
+  html+=`</tr>`;
+
+  // ── Data rows ──
+  rowItems.forEach(item=>{
+    if(item.type==='cat'){
+      const bg=catBgColors[item.ci%catBgColors.length]||'#f3f4f6';
+      const tc=catTxColors[item.ci%catTxColors.length]||'#374151';
+      html+=`<tr style="height:20pt"><td colspan="${totalCols}" style="font-weight:bold;font-size:9pt;background:${bg};color:${tc};padding:2px 8px;border:0.5pt solid #d0d0ce;">${item.label}</td></tr>`;
+      return;
+    }
+
+    // row type
+    const labelBg=item.subRowIdx===0?'#fafafa':'#f3f4f6';
+    const labelTc=item.subRowIdx===0?'#374151':'#9b9b9b';
+    const labelFw=item.subRowIdx===0?'500':'normal';
+    html+=`<tr style="height:22pt"><td style="background:${labelBg};color:${labelTc};font-weight:${labelFw};text-align:center;font-size:9pt;">${item.label}</td>`;
+
+    const spans=buildSpans(item);
+    // Build cell-by-cell: skip cells that are inside a span
+    const coveredUntil={}; // day -> end day of span covering it (exclusive start)
+    let d=1;
+    while(d<=daysInMonth){
+      // check if a span starts exactly on day d
+      const span=spans.find(s=>s.sd===d);
+      if(span){
+        const colspan=span.ed-span.sd+1;
+        const c=TYPE_COLORS[span.act.type]||{bg:'#e5e7eb',text:'#374151',border:'#9ca3af'};
+        const cellBg=span.isPreheat?lighten(c.bg,0.45):c.bg;
+        const cellTc=c.text;
+        const bdStyle=span.isPreheat?`border:1pt dashed ${c.border};`:`border:0.5pt solid ${c.border};`;
+        const fw=span.act.important?'bold':'normal';
+        const label=span.isPreheat?`[预热]${span.act.name}`:span.act.name;
+        html+=`<td colspan="${colspan}" style="background:${cellBg};color:${cellTc};${bdStyle}font-weight:${fw};font-size:8pt;overflow:hidden;white-space:nowrap;" title="${span.act.name}">${label}</td>`;
+        d+=colspan;
+      }else{
+        // check if d is inside a span (not the start — already rendered)
+        const inside=spans.find(s=>d>s.sd&&d<=s.ed);
+        if(inside){
+          // This shouldn't happen if colspan is correct; skip
+          d++;
+        }else{
+          const day=days[d-1];
+          const bg=day.isToday?'#f0eeff':day.isWe?'#fdf8f8':'#ffffff';
+          html+=`<td style="background:${bg};"></td>`;
+          d++;
+        }
+      }
+    }
+    html+=`</tr>`;
+  });
+
+  html+=`</table></body></html>`;
+
+  const blob=new Blob(['\uFEFF'+html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  const pad=v=>String(v).padStart(2,'0');
+  const n=new Date();
+  const stamp=`${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}_${pad(n.getHours())}${pad(n.getMinutes())}`;
+  a.download=`排期日历_${calGame}_${year}年${month+1}月_${stamp}.xls`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showNotif(`✅ 已导出：${calGame} ${year}年${mNames[month]} 排期日历`);
+}
+// ===================== END EXPORT CALENDAR =====================
+
 
 // Tooltip
 function showTip(e,id,mode){
@@ -3260,9 +3446,9 @@ function showModal(mode,id){
         <input id="f-name" type="text" placeholder="如：王者荣耀3月充值返利" value="${v('name')}"></div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">开始时间 <span class="req">*</span></div>
-          <input id="f-start" type="datetime-local" value="${v('startTime','2026-03-17 10:00').replace(' ','T')}"></div>
+          <input id="f-start" type="datetime-local" value="${v('startTime',(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}T10:00`;})())}"></div>
         <div class="fg"><div class="flabel">结束时间 <span class="req">*</span></div>
-          <input id="f-end" type="datetime-local" value="${v('endTime','2026-03-31 23:59').replace(' ','T')}"></div>
+          <input id="f-end" type="datetime-local" value="${v('endTime',(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(new Date(n.getFullYear(),n.getMonth()+1,0).getDate()).padStart(2,'0')}T23:59`;})())}"></div>
       </div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">预热时间（可选）</div>
