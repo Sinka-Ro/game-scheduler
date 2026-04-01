@@ -278,6 +278,25 @@ textarea{resize:vertical;min-height:64px}
 .rtag-filter{padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;border:none;background:transparent;width:100%;text-align:left;color:var(--text2)}
 .rtag-filter:hover,.rtag-filter.active{background:var(--bg2);color:#5046e4;font-weight:500}
 .report-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:10px;padding:40px}
+
+/* ── Type Search Dropdown ── */
+.type-search-wrap{position:relative}
+.type-search-input{font-size:12px;padding:6px 28px 6px 9px;border:1px solid var(--border2);border-radius:5px;outline:none;color:var(--text);background:var(--bg);width:100%;cursor:pointer;box-sizing:border-box}
+.type-search-input:focus{border-color:var(--primary)}
+.type-search-arrow{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text3);pointer-events:none}
+.type-search-dropdown{position:absolute;top:calc(100% + 3px);left:0;right:0;background:var(--bg);border:1px solid var(--border2);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:9999;max-height:220px;overflow-y:auto;display:none}
+.type-search-dropdown.open{display:block}
+.type-search-opt{padding:7px 10px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:7px}
+.type-search-opt:hover,.type-search-opt.highlighted{background:var(--primary-light);color:var(--primary)}
+.type-search-opt .opt-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.type-search-opt mark{background:transparent;color:var(--primary);font-weight:600}
+.type-search-empty{padding:10px;font-size:12px;color:var(--text3);text-align:center}
+
+/* ── Calendar row drag ── */
+.cal-row-drag.drag-over-row{background:var(--primary-light)!important;outline:2px dashed var(--primary);}
+.cal-row-drag.dragging-row{opacity:.4;}
+.cal-right-row.drag-over-row{background:rgba(80,70,228,.08)!important;}
+.cal-right-row.dragging-row{opacity:.4;}
 </style>
 </head>
 <body>
@@ -1952,6 +1971,101 @@ function switchTab(el,tab){
   el.classList.add('active');currentTab=tab;renderMain();
 }
 
+
+// ===================== TYPE SEARCH DROPDOWN =====================
+function initTypeSearchDropdown(selectedVal){
+  const wrap = document.getElementById('type-search-wrap');
+  const inp  = document.getElementById('f-type-input');
+  const hid  = document.getElementById('f-type');
+  const dd   = document.getElementById('type-search-dropdown');
+  if(!wrap||!inp||!hid||!dd) return;
+
+  // Make input editable now (was readonly to prevent keyboard on open)
+  inp.removeAttribute('readonly');
+
+  // Build full option list
+  function renderOpts(filter){
+    const q = filter.trim().toLowerCase();
+    dd.innerHTML = '';
+    const matched = ACT_TYPES.filter(t => !q || t.toLowerCase().includes(q));
+    if(!matched.length){
+      dd.innerHTML = '<div class="type-search-empty">无匹配结果</div>';
+      return;
+    }
+    matched.forEach((t,i)=>{
+      const c = TYPE_COLORS[t]||{bg:'#e5e7eb',border:'#9ca3af'};
+      const display = q ? t.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), m=>`<mark>${m}</mark>`) : t;
+      const opt = document.createElement('div');
+      opt.className = 'type-search-opt' + (t===hid.value?' highlighted':'');
+      opt.dataset.val = t;
+      opt.innerHTML = `<span class="opt-dot" style="background:${c.bg};border:1px solid ${c.border||c.bg}"></span><span>${display}</span>`;
+      opt.addEventListener('mousedown', e=>{ e.preventDefault(); selectTypeOpt(t); });
+      dd.appendChild(opt);
+    });
+  }
+
+  function selectTypeOpt(val){
+    hid.value = val;
+    inp.value = val;
+    inp.setAttribute('readonly','readonly');
+    dd.classList.remove('open');
+    inp.blur();
+    renderOpts('');
+  }
+
+  inp.addEventListener('focus', ()=>{
+    inp.removeAttribute('readonly');
+    inp.select();
+    renderOpts(inp.value===''+inp.value ? '' : inp.value);
+    dd.classList.add('open');
+  });
+  inp.addEventListener('input', ()=>{ renderOpts(inp.value); dd.classList.add('open'); });
+  inp.addEventListener('keydown', e=>{
+    const opts = [...dd.querySelectorAll('.type-search-opt')];
+    const cur  = dd.querySelector('.type-search-opt.highlighted');
+    let idx    = opts.indexOf(cur);
+    if(e.key==='ArrowDown'){ e.preventDefault(); idx=Math.min(idx+1,opts.length-1); opts[idx]?.classList.add('highlighted'); opts.forEach((o,i)=>i!==idx&&o.classList.remove('highlighted')); opts[idx]?.scrollIntoView({block:'nearest'}); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); idx=Math.max(idx-1,0); opts[idx]?.classList.add('highlighted'); opts.forEach((o,i)=>i!==idx&&o.classList.remove('highlighted')); opts[idx]?.scrollIntoView({block:'nearest'}); }
+    else if(e.key==='Enter'){ e.preventDefault(); const hlt=dd.querySelector('.type-search-opt.highlighted'); if(hlt) selectTypeOpt(hlt.dataset.val); }
+    else if(e.key==='Escape'){ dd.classList.remove('open'); inp.setAttribute('readonly','readonly'); inp.value=hid.value; }
+  });
+  inp.addEventListener('blur', ()=>{
+    setTimeout(()=>{
+      dd.classList.remove('open');
+      inp.setAttribute('readonly','readonly');
+      // Reset display to selected value if no valid match
+      if(!ACT_TYPES.includes(inp.value)) inp.value = hid.value;
+    }, 150);
+  });
+
+  renderOpts('');
+}
+
+function openTypeDropdown(e){
+  const dd = document.getElementById('type-search-dropdown');
+  const inp = document.getElementById('f-type-input');
+  if(dd&&inp){ dd.classList.add('open'); inp.removeAttribute('readonly'); inp.select(); }
+}
+function filterTypeDropdown(q){
+  const dd = document.getElementById('type-search-dropdown');
+  if(!dd) return;
+  const hid = document.getElementById('f-type');
+  const matched = ACT_TYPES.filter(t => !q.trim() || t.toLowerCase().includes(q.trim().toLowerCase()));
+  dd.innerHTML = '';
+  if(!matched.length){ dd.innerHTML='<div class="type-search-empty">无匹配结果</div>'; return; }
+  matched.forEach(t=>{
+    const c = TYPE_COLORS[t]||{bg:'#e5e7eb',border:'#9ca3af'};
+    const display = q ? t.replace(new RegExp(q.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), m=>`<mark>${m}</mark>`) : t;
+    const opt = document.createElement('div');
+    opt.className = 'type-search-opt';
+    opt.dataset.val = t;
+    opt.innerHTML = `<span class="opt-dot" style="background:${c.bg};border:1px solid ${c.border||c.bg}"></span><span>${display}</span>`;
+    opt.addEventListener('mousedown', e=>{ e.preventDefault(); hid.value=t; document.getElementById('f-type-input').value=t; document.getElementById('f-type-input').setAttribute('readonly','readonly'); dd.classList.remove('open'); });
+    dd.appendChild(opt);
+  });
+}
+// ===================== END TYPE SEARCH DROPDOWN =====================
+
 // ===================== GANTT CALENDAR =====================
 function renderCalendarView(container){
   const year=calYear, month=calMonth;
@@ -2078,13 +2192,15 @@ function renderCalendarView(container){
     } else {
       // For sub-rows after the first, show a continuation indicator
       if(item.subRowIdx===0){
-        // first sub-row: show label, with row-count badge if multiple
         const badge=item.totalSubRows>1
           ?`<span style="margin-left:4px;font-size:9px;background:var(--bg3);color:var(--text3);padding:1px 5px;border-radius:8px">${item.totalSubRows}</span>`
           :'';
-        leftRows+=`<div class="left-row" title="${item.label}">${item.label}${badge}</div>`;
+        leftRows+=`<div class="left-row cal-row-drag" draggable="true"
+          data-ci="${item.ci}" data-row-label="${item.label}" data-types="${(item.types||[]).join(',')}"
+          title="拖拽可调整行顺序 | ${item.label}"
+          style="cursor:grab">
+          <span style="font-size:10px;color:var(--text3);margin-right:4px;user-select:none">⠿</span>${item.label}${badge}</div>`;
       } else {
-        // continuation row — subtle indent indicator
         leftRows+=`<div class="left-row" style="opacity:.55;font-size:10px;padding-left:18px">↳ 续行 ${item.subRowIdx+1}</div>`;
       }
     }
@@ -2148,7 +2264,8 @@ function renderCalendarView(container){
           }
         }
       });
-      rightBodyHtml+=`<div class="right-row">
+      rightBodyHtml+=`<div class="right-row cal-right-row"
+        data-ci="${item.ci}" data-row-label="${item.label}" data-sub="${item.subRowIdx}">
         ${dayCells}
         ${bars}
         ${todayPos>=0?`<div class="today-line" style="left:${todayPos}px"></div>`:''}
@@ -2193,6 +2310,8 @@ function renderCalendarView(container){
   if(gr&&lr){
     gr.addEventListener('scroll',()=>{lr.scrollTop=gr.scrollTop});
   }
+  // Init row drag
+  setTimeout(()=>initCalRowDrag(),0);
 }
 
 function switchCalGame(g){calGame=g;persistUiState();renderMain()}
@@ -2210,6 +2329,76 @@ function goToToday(){
   persistUiState();
   renderMain();
 }
+
+
+// ===================== CALENDAR ROW DRAG =====================
+function initCalRowDrag(){
+  const lr = document.getElementById('leftRows');
+  if(!lr) return;
+  const dragRows = [...lr.querySelectorAll('.cal-row-drag')];
+  if(!dragRows.length) return;
+
+  let dragSrc = null; // { ci, label, types[] }
+
+  dragRows.forEach(el=>{
+    el.addEventListener('dragstart', e=>{
+      dragSrc = { ci: +el.dataset.ci, label: el.dataset.rowLabel, types: el.dataset.types ? el.dataset.types.split(',') : [] };
+      el.classList.add('dragging-row');
+      // also highlight corresponding right-row
+      getRightRow(el.dataset.ci, el.dataset.rowLabel)?.classList.add('dragging-row');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', ()=>{
+      dragRows.forEach(r=>r.classList.remove('dragging-row','drag-over-row'));
+      document.querySelectorAll('.cal-right-row').forEach(r=>r.classList.remove('dragging-row','drag-over-row'));
+      dragSrc = null;
+    });
+    el.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('drag-over-row'); getRightRow(el.dataset.ci, el.dataset.rowLabel)?.classList.add('drag-over-row'); });
+    el.addEventListener('dragleave', ()=>{ el.classList.remove('drag-over-row'); getRightRow(el.dataset.ci, el.dataset.rowLabel)?.classList.remove('drag-over-row'); });
+    el.addEventListener('drop', e=>{
+      e.preventDefault();
+      el.classList.remove('drag-over-row');
+      getRightRow(el.dataset.ci, el.dataset.rowLabel)?.classList.remove('drag-over-row');
+      if(!dragSrc) return;
+      const targetCi  = +el.dataset.ci;
+      const targetLabel = el.dataset.rowLabel;
+      if(dragSrc.label === targetLabel && dragSrc.ci === targetCi) return;
+      reorderCalRow(dragSrc, targetCi, targetLabel);
+    });
+  });
+}
+
+function getRightRow(ci, label){
+  return document.querySelector(`.cal-right-row[data-ci="${ci}"][data-row-label="${label}"][data-sub="0"]`);
+}
+
+function reorderCalRow(src, targetCi, targetLabel){
+  const game = calGame;
+  const cats = GAME_CATS[game];
+  if(!cats) return;
+
+  // Find and remove source row from its category
+  let srcRow = null;
+  for(const cat of cats){
+    const idx = cat.rows.findIndex(r => r.label === src.label);
+    if(idx >= 0){ srcRow = cat.rows.splice(idx, 1)[0]; break; }
+  }
+  if(!srcRow) return;
+
+  // Find target position and insert before it
+  for(const cat of cats){
+    const tIdx = cat.rows.findIndex(r => r.label === targetLabel);
+    if(tIdx >= 0){
+      cat.rows.splice(tIdx, 0, srcRow);
+      break;
+    }
+  }
+
+  saveData();
+  renderMain();
+  showNotif(`已将「${src.label}」移动到「${targetLabel}」前面`);
+}
+// ===================== END CALENDAR ROW DRAG =====================
 
 // ===================== EXPORT CALENDAR TO EXCEL =====================
 function exportCalendarExcel(){
@@ -3440,7 +3629,15 @@ function showModal(mode,id){
         <div class="fg"><div class="flabel">竞品游戏 <span class="req">*</span></div>
           <select id="f-game">${GAMES.map(g=>`<option ${selectedGame===g?'selected':''}>${g}</option>`).join('')}</select></div>
         <div class="fg"><div class="flabel">活动类型 <span class="req">*</span></div>
-          <select id="f-type">${ACT_TYPES.map(t=>`<option ${selectedType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="type-search-wrap" id="type-search-wrap">
+            <input class="type-search-input" id="f-type-input" type="text" placeholder="搜索活动类型…" autocomplete="off"
+              value="${selectedType}" readonly
+              onclick="openTypeDropdown(event)"
+              oninput="filterTypeDropdown(this.value)">
+            <span class="type-search-arrow">▾</span>
+            <input type="hidden" id="f-type" value="${selectedType}">
+            <div class="type-search-dropdown" id="type-search-dropdown"></div>
+          </div></div>
       </div>
       <div class="fg full"><div class="flabel">活动名称 <span class="req">*</span></div>
         <input id="f-name" type="text" placeholder="如：王者荣耀3月充值返利" value="${v('name')}"></div>
@@ -3511,6 +3708,7 @@ function showModal(mode,id){
     </div>
   </div>`;
   document.body.appendChild(ov);
+  setTimeout(()=>initTypeSearchDropdown(document.getElementById('f-type')?.value||''),0);
 }
 
 function toggleCyclePanel(){
@@ -3716,7 +3914,7 @@ function showDetail(id){
           ].map(([l,v])=>`<div><div style="font-size:11px;color:var(--text3)">${l}</div><div style="margin-top:2px">${v}</div></div>`).join('')}
       </div>
       ${a.intensity?`<div><div style="font-size:11px;color:var(--text3)">活动力度</div><div style="margin-top:3px">${a.intensity}</div></div>`:''}
-      ${a.rules?`<div><div style="font-size:11px;color:var(--text3)">活动规则简述</div><div style="margin-top:3px;font-size:12px;color:var(--text2);line-height:1.7;background:var(--bg2);padding:10px;border-radius:5px">${a.rules}</div></div>`:''}
+      ${a.rules?`<div><div style="font-size:11px;color:var(--text3)">活动规则简述</div><div style="margin-top:3px;font-size:12px;color:var(--text2);line-height:1.7;background:var(--bg2);padding:10px;border-radius:5px;white-space:pre-wrap;word-break:break-word">${a.rules.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:''}
       ${a.note?`<div><div style="font-size:11px;color:var(--text3)">备注</div><div style="margin-top:3px;font-size:12px;color:var(--text2)">${a.note}</div></div>`:''}
 
       <!-- ── ATTACHMENTS ── -->
@@ -3758,6 +3956,44 @@ function showDetail(id){
     </div>
   </div>`;
   document.body.appendChild(ov);
+  // Bind paste-to-upload on the detail modal
+  if(canEdit){
+    const _pasteHandler = async (e) => {
+      const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+      if(!items) return;
+      const imageItems = [...items].filter(it => it.type.startsWith('image/'));
+      if(!imageItems.length) return;
+      e.preventDefault();
+      showNotif('正在处理粘贴的图片…');
+      for(const item of imageItems){
+        const file = item.getAsFile();
+        if(file) await processFiles([file], actId);
+      }
+    };
+    document.addEventListener('paste', _pasteHandler);
+    // Remove handler when modal closes
+    const _origClose = window.closeModal;
+    const _onceClose = () => {
+      document.removeEventListener('paste', _pasteHandler);
+      window.closeModal = _origClose;
+    };
+    const origCloseModal = window.closeModal;
+    window.closeModal = function(){ _onceClose(); origCloseModal.apply(this, arguments); };
+
+    // Also show paste hint on dropzone
+    setTimeout(()=>{
+      const dz = document.getElementById('dropzone-' + actId);
+      if(dz){
+        const hint = dz.querySelector('div[style*="pointer-events:none"]');
+        if(hint){
+          const p = document.createElement('div');
+          p.style.cssText = 'font-size:10px;color:var(--text3);margin-top:4px';
+          p.textContent = '也可直接 Ctrl+V 粘贴图片';
+          hint.appendChild(p);
+        }
+      }
+    }, 0);
+  }
 }
 
 // ===================== MEDIA / ATTACHMENTS =====================
@@ -4287,7 +4523,15 @@ function copyActivity(id){
         <div class="fg"><div class="flabel">竞品游戏 <span class="req">*</span></div>
           <select id="f-game">${GAMES.map(g=>`<option ${v('game')===g?'selected':''}>${g}</option>`).join('')}</select></div>
         <div class="fg"><div class="flabel">活动类型 <span class="req">*</span></div>
-          <select id="f-type">${ACT_TYPES.map(t=>`<option ${v('type')===t?'selected':''}>${t}</option>`).join('')}</select></div>
+          <div class="type-search-wrap" id="type-search-wrap">
+            <input class="type-search-input" id="f-type-input" type="text" placeholder="搜索活动类型…" autocomplete="off"
+              value="${v('type')}" readonly
+              onclick="openTypeDropdown(event)"
+              oninput="filterTypeDropdown(this.value)">
+            <span class="type-search-arrow">▾</span>
+            <input type="hidden" id="f-type" value="${v('type')}">
+            <div class="type-search-dropdown" id="type-search-dropdown"></div>
+          </div></div>
       </div>
       <div class="fg full"><div class="flabel">活动名称 <span class="req">*</span></div>
         <input id="f-name" type="text" value="${v('name')} (副本)"></div>
