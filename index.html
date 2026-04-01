@@ -578,7 +578,7 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-const CLOUD_SYNC_POLL_MS = 15000; // 15s poll — reduced from 5s to ease DB load
+const CLOUD_SYNC_POLL_MS = 5000;
 let _clientId = '';
 let _syncChannel = null;
 let _syncPollTimer = null;
@@ -1185,13 +1185,9 @@ async function refreshCloudState(opts){
   try{
     const cloud = await sbReadRow('main_data');
     if(!cloud) return false;
+    await sbReadAttachments();
     const nextRev = getSnapshotRevision(cloud);
-    // Only fetch attachments if main record changed (avoids expensive query every poll)
-    let nextAttSig = _syncLastAttachmentSig;
-    if(nextRev > _syncLastMainRev || options.force){
-      await sbReadAttachments();
-      nextAttSig = getAttachmentsSignature(attachments);
-    }
+    const nextAttSig = getAttachmentsSignature(attachments);
     const changed = !!options.force || nextRev > _syncLastMainRev || nextAttSig !== _syncLastAttachmentSig;
     if(!changed) return false;
     const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
@@ -1437,31 +1433,11 @@ function buildSnapshot(){
   const prunedDeleted = {};
   Object.entries(_deletedKeys).forEach(([k,ts])=>{ if(ts>cutoff) prunedDeleted[k]=ts; });
   _deletedKeys = prunedDeleted;
-
-  // Build attachment INDEX (metadata only, NO base64/data field)
-  // This lets cloud peers know which attachments exist without bloating the snapshot
-  const attachmentIndex = {};
-  Object.entries(attachments).forEach(([actId, atts])=>{
-    if(atts && atts.length){
-      attachmentIndex[actId] = atts.map(att=>({
-        id:         att.id,
-        name:       att.name,
-        type:       att.type,
-        size:       att.size || 0,
-        addedBy:    att.addedBy || '',
-        addedAt:    att.addedAt || '',
-        storagePath:att.storagePath || ''
-        // NOTE: att.data (base64) intentionally excluded — stored separately
-      }));
-    }
-  });
-
   return { activities:activities.map(normalizeActivity), GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300),
            reports, REPORT_TAGS, REPORT_TAG_COLORS,
            _deletedKeys,
-           _attachmentIndex: attachmentIndex,
            savedAt:ts(), savedAtMs:revision,
            _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
 }
@@ -1534,20 +1510,7 @@ function applySnapshot(d, opts){
   if(d.GAME_CAT_COLORS) Object.assign(GAME_CAT_COLORS,d.GAME_CAT_COLORS);
   if(d.GAME_CAT_TEXT)   Object.assign(GAME_CAT_TEXT,d.GAME_CAT_TEXT);
   if(Array.isArray(d.opLogs)) opLogs=d.opLogs;
-  // Merge attachment index from snapshot — adds metadata for attachments we don't have locally
-  // (e.g. images uploaded by teammates). Full data loaded separately via sbReadAttachments().
-  if(d._attachmentIndex && typeof d._attachmentIndex === 'object'){
-    Object.entries(d._attachmentIndex).forEach(([actId, indexAtts])=>{
-      if(!Array.isArray(indexAtts) || !indexAtts.length) return;
-      const local = attachments[actId] || [];
-      const localIds = new Set(local.map(a=>a.id));
-      // Add metadata stubs for attachments not yet in local store
-      const stubs = indexAtts.filter(a=>!localIds.has(a.id));
-      if(stubs.length){
-        attachments[actId] = [...local, ...stubs];
-      }
-    });
-  }
+  // attachments loaded separately via sbReadAttachments()
   if(Array.isArray(d.reports)) reports=d.reports;
   if(Array.isArray(d.REPORT_TAGS)&&d.REPORT_TAGS.length) REPORT_TAGS=d.REPORT_TAGS;
   if(d.REPORT_TAG_COLORS) Object.assign(REPORT_TAG_COLORS,d.REPORT_TAG_COLORS);
@@ -1580,33 +1543,25 @@ async function sbReadRow(rowId){
 }
 
 async function sbReadAttachments(){
-  // Fetch all attachment metadata rows in one query
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_%2A&select=id,payload`, {
+  // Fetch all attachment rows in one query
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
   });
   if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
   const rows = await r.json();
+  const nextAttachments = {};
   if(!rows||!rows.length){
-    return { items: attachments, signature:getAttachmentsSignature(attachments) };
+    attachments = nextAttachments;
+    return { items: attachments, signature:'' };
   }
-  // Merge cloud metadata with local base64 data
-  // Cloud rows only have metadata (no base64); local may have base64 for locally-uploaded images
-  const localCopy = attachments; // preserve existing local data
   rows.forEach(row=>{
     try{
-      const actId = row.id.replace(/^att_/, '');
-      const cloudAtts = JSON.parse(row.payload);
-      if(!Array.isArray(cloudAtts)||!cloudAtts.length) return;
-      const localAtts = localCopy[actId] || [];
-      const localMap  = new Map(localAtts.map(a=>[a.id, a]));
-      // Merge: cloud metadata + local base64 data where available
-      attachments[actId] = cloudAtts.map(cloudAtt=>{
-        const localAtt = localMap.get(cloudAtt.id);
-        if(localAtt && localAtt.data) return {...cloudAtt, data: localAtt.data};
-        return cloudAtt; // metadata only — image will show as broken until locally uploaded
-      });
+      const actId = row.id.slice(4); // strip "att_" prefix
+      const atts  = JSON.parse(row.payload);
+      if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
     }catch(e){}
   });
+  attachments = nextAttachments;
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
@@ -1620,10 +1575,7 @@ async function sbSaveAttachments(actId){
     }).catch(()=>{});
     return;
   }
-  // Strip base64 data before writing to cloud — only store metadata
-  // base64 stays in localStorage only; if storagePath exists the URL is the source of truth
-  const metaOnly = atts.map(({data, ...meta})=>meta);
-  await sbUpsertRow(`att_${actId}`, metaOnly);
+  await sbUpsertRow(`att_${actId}`, atts);
 }
 
 // ─── Load ───
@@ -1665,16 +1617,14 @@ async function loadData(){
       if(cloud) persistSnapshotToLocal(buildSnapshot());
       updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
-      // Load attachments in background — don't block initial render
-      setTimeout(()=>{
-        sbReadAttachments().then(()=>{
-          const latest = lsLoad() || {};
-          latest._attachments = attachments;
-          lsSave(latest);
-          _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-          if(currentUser.id) renderMain(); // re-render once images available
-        }).catch(e=>console.warn('Attachment load failed',e));
-      }, 100);
+      sbReadAttachments().then(()=>{
+        const latest = lsLoad() || {};
+        latest._attachments = attachments;
+        // Save the merged snapshot (already in localStorage from above), just update attachments.
+        lsSave(latest);
+        _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+        if(currentUser.id) renderMain();
+      }).catch(e=>console.warn('Attachment load failed',e));
     }catch(e){
       console.warn('Supabase load failed',e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
@@ -1710,30 +1660,6 @@ async function saveAttachmentsFor(actId){
       _syncLastAttachmentSig = _lastLocalAttachmentSig;
     });
   }
-}
-
-
-// ─── Strip base64 image/video data before cloud upload ───
-// Keeps the snapshot lean: metadata stays, binary data goes.
-// The actual image data lives either in localStorage (_attachments)
-// or in separate per-activity Supabase rows (att_{actId}).
-function stripBase64FromSnapshot(snapshot){
-  if(!snapshot) return snapshot;
-  const clean = Object.assign({}, snapshot);
-  // Remove the full attachments blob if it somehow got attached
-  delete clean._attachments;
-  // Clean _attachmentIndex: already metadata-only, but just in case
-  if(clean._attachmentIndex){
-    const idx = {};
-    Object.entries(clean._attachmentIndex).forEach(([actId, atts])=>{
-      idx[actId] = (atts||[]).map(att=>{
-        const {data, ...meta} = att; // eslint-disable-line no-unused-vars
-        return meta;
-      });
-    });
-    clean._attachmentIndex = idx;
-  }
-  return clean;
 }
 
 async function _doSave(){
@@ -1781,15 +1707,10 @@ async function _doSave(){
     persistSnapshotToLocal(snapshot);
     updateBarTs();
 
-    // Strip any base64 data from snapshot before sending to cloud
-    // (belt-and-suspenders: buildSnapshot should already exclude them,
-    //  but local _attachments loaded from localStorage could slip through)
-    const cloudPayload = stripBase64FromSnapshot(snapshot);
-    const payloadKB = Math.round(JSON.stringify(cloudPayload).length / 1024);
-    await sbUpsertRow('main_data', cloudPayload);
+    await sbUpsertRow('main_data', snapshot);
     _syncLastMainRev = _lastLocalSaveRev;
     _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-    setBarState('saved',`已同步到云端 · ${ts()} · 主快照 ${payloadKB}KB`);
+    setBarState('saved',`已同步到云端 · ${ts()}`);
     // After a successful save, update in-memory activities to match what was saved
     // so subsequent saves don't create a new merge conflict with the same data
     activities = finalActivities;
