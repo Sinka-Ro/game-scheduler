@@ -297,6 +297,21 @@ textarea{resize:vertical;min-height:64px}
 .cal-row-drag.dragging-row{opacity:.4;}
 .cal-right-row.drag-over-row{background:rgba(80,70,228,.08)!important;}
 .cal-right-row.dragging-row{opacity:.4;}
+
+/* ── Media type filter bar ── */
+.media-type-bar{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;flex-wrap:wrap;align-items:center}
+.media-type-chip{padding:3px 11px;font-size:12px;border-radius:20px;cursor:pointer;border:1px solid var(--border2);background:var(--bg);color:var(--text2);transition:all .12s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.media-type-chip:hover{border-color:var(--primary);color:var(--primary)}
+.media-type-chip.active{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:500}
+.media-type-chip .chip-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+/* ── Media paste zone ── */
+.media-paste-zone{border:2px dashed var(--border2);border-radius:8px;margin:0 16px 12px;padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .15s;background:var(--bg)}
+.media-paste-zone:hover,.media-paste-zone.pasting{border-color:var(--primary);background:var(--primary-light)}
+.media-paste-zone.pasting{border-style:solid}
+.media-paste-zone-icon{font-size:20px;flex-shrink:0}
+.media-paste-zone-text{font-size:12px;color:var(--text2);line-height:1.5}
+.media-paste-zone-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.media-act-selector{font-size:12px;padding:4px 8px;border:1px solid var(--border2);border-radius:5px;outline:none;color:var(--text);background:var(--bg);max-width:200px}
 </style>
 </head>
 <body>
@@ -527,6 +542,7 @@ let calYear=new Date().getFullYear(), calMonth=new Date().getMonth();
 let activeGameFilter='all', activeTypeFilter='all';
 let editingId=null;
 let mediaGame='all';
+let mediaTypeFilter='all'; // 'all' or an ACT_TYPES value
 
 // ===================== AUTH MODULE =====================
 // Supabase Auth + user_profiles table.
@@ -4302,28 +4318,77 @@ function renderMediaView(container){
     atts.forEach(att=>allItems.push({att,act,actId}));
   });
 
-  // Filter by selected game
-  const filteredItems = mediaGame==='all'
+  // Filter by game
+  const gameFiltered = mediaGame==='all'
     ? allItems
     : allItems.filter(({act})=>act&&act.game===mediaGame);
+
+  // Collect types present in gameFiltered
+  const presentTypes=[];
+  ACT_TYPES.forEach(t=>{ if(gameFiltered.some(({act})=>act&&act.type===t)) presentTypes.push(t); });
+  gameFiltered.forEach(({act})=>{ if(act&&!ACT_TYPES.includes(act.type)&&!presentTypes.includes(act.type)) presentTypes.push(act.type); });
+
+  // Reset filter if it no longer exists
+  if(mediaTypeFilter!=='all'&&!presentTypes.includes(mediaTypeFilter)) mediaTypeFilter='all';
+
+  // Filter by type
+  const filteredItems = mediaTypeFilter==='all'
+    ? gameFiltered
+    : gameFiltered.filter(({act})=>act&&act.type===mediaTypeFilter);
 
   // Count per game
   const gameCounts={all:allItems.length};
   GAMES.forEach(g=>{gameCounts[g]=allItems.filter(({act})=>act&&act.game===g).length;});
 
-  const tabs=allGames.map(g=>`<div class="media-game-tab ${mediaGame===g?'active':''}" onclick="mediaGame='${g}';renderMain()">${g==='all'?'全部游戏':g} <span style="opacity:.7">${gameCounts[g]||0}</span></div>`).join('');
+  // Game tabs
+  const tabs=allGames.map(g=>`<div class="media-game-tab ${mediaGame===g?'active':''}" onclick="mediaGame='${g}';mediaTypeFilter='all';renderMain()">${g==='all'?'全部游戏':g} <span style="opacity:.7">${gameCounts[g]||0}</span></div>`).join('');
 
-  // Group by activity type
+  // Type filter chips
+  const typeChipAll=`<div class="media-type-chip ${mediaTypeFilter==='all'?'active':''}" onclick="mediaTypeFilter='all';renderMain()">全部类型 <span style="opacity:.7">${gameFiltered.length}</span></div>`;
+  const typeChips=presentTypes.map(t=>{
+    const c=TYPE_COLORS[t]||{bg:'#e5e7eb',border:'#9ca3af',text:'#374151'};
+    const cnt=gameFiltered.filter(({act})=>act&&act.type===t).length;
+    const isActive=mediaTypeFilter===t;
+    return `<div class="media-type-chip ${isActive?'active':''}" onclick="mediaTypeFilter='${t}';renderMain()">
+      <span class="chip-dot" style="background:${isActive?'rgba(255,255,255,.7)':c.bg};border:1px solid ${isActive?'rgba(255,255,255,.4)':c.border||c.bg}"></span>
+      ${t} <span style="opacity:.7">${cnt}</span>
+    </div>`;
+  }).join('');
+
+  // Activity options for paste selector (filtered by current game)
+  const pasteActOptions = activities
+    .filter(a=>mediaGame==='all'||a.game===mediaGame)
+    .map(a=>`<option value="${a.id}">[${a.game}·${a.type}] ${a.name}</option>`)
+    .join('');
+
+  // Paste zone (only for editors/admins)
+  const canEdit=currentUser.role!=='viewer';
+  const pasteZoneHtml = canEdit ? `
+    <div class="media-paste-zone" id="media-paste-zone" title="点击此区域后 Ctrl+V 粘贴截图，图片将存入所选活动">
+      <div class="media-paste-zone-icon">📋</div>
+      <div style="flex:1;min-width:0">
+        <div class="media-paste-zone-text">点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动</div>
+        <div class="media-paste-zone-sub">图片将作为附件存入所选活动，并在媒体库中展示</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+        <div style="font-size:11px;color:var(--text3);font-weight:500">目标活动</div>
+        <select class="media-act-selector" id="media-paste-act-select">
+          <option value="">— 请选择活动 —</option>
+          ${pasteActOptions}
+        </select>
+      </div>
+    </div>` : '';
+
+  // Group by type for display
   const typeGroups={};
   filteredItems.forEach(item=>{
-    const typeName = item.act ? item.act.type : '未知类型';
+    const typeName=item.act?item.act.type:'未知类型';
     if(!typeGroups[typeName]) typeGroups[typeName]=[];
     typeGroups[typeName].push(item);
   });
-  // Sort types by ACT_TYPES order
-  const sortedTypes = [...ACT_TYPES.filter(t=>typeGroups[t]), ...Object.keys(typeGroups).filter(t=>!ACT_TYPES.includes(t))];
+  const sortedTypes=[...ACT_TYPES.filter(t=>typeGroups[t]),...Object.keys(typeGroups).filter(t=>!ACT_TYPES.includes(t))];
 
-  const mediaCardHtml = ({att,act,actId}) => `
+  const mediaCardHtml=({att,act,actId})=>`
     <div class="media-card" onclick="openLightboxFromMedia('${actId}','${att.id}')">
       ${att.type==='image'
         ?`<img src="${att.data}" alt="${att.name}" loading="lazy" style="width:150px;height:auto;min-height:80px;max-height:350px;object-fit:cover;display:block;background:var(--bg2)">`
@@ -4338,8 +4403,8 @@ function renderMediaView(container){
   const groupedHtml = filteredItems.length===0
     ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:12px;padding:40px">
         <div style="font-size:40px">🖼</div>
-        <div style="font-size:14px">暂无媒体文件</div>
-        <div style="font-size:12px">在活动详情页上传图片或视频后，会在这里汇总显示</div>
+        <div style="font-size:14px">${mediaTypeFilter==='all'?'暂无媒体文件':'该类型暂无媒体文件'}</div>
+        <div style="font-size:12px">${mediaTypeFilter==='all'?'在活动详情页上传图片后会在这里显示':'切换类型查看其他图片，或使用上方粘贴区上传'}</div>
       </div>`
     : `<div style="padding:16px;overflow-y:auto;flex:1">
         ${sortedTypes.map(type=>{
@@ -4366,14 +4431,89 @@ function renderMediaView(container){
         <span style="font-size:11px;color:var(--text3)">${filteredItems.length} 个文件</span>
         ${filteredItems.filter(({att})=>att.type==='image').length>0
           ?`<button class="btn sm" onclick="exportAllImages('${mediaGame}')" style="font-size:11px;white-space:nowrap">
-              ⬇ 导出全部图片（${filteredItems.filter(({att})=>att.type==='image').length}张）
+              ⬇ 导出图片（${filteredItems.filter(({att})=>att.type==='image').length}张）
             </button>`
           :''}
       </div>
     </div>
+    <div class="media-type-bar">
+      ${typeChipAll}
+      ${typeChips}
+    </div>
+    ${pasteZoneHtml}
     ${groupedHtml}
   </div>`;
+
+  // Init paste zone
+  if(canEdit) initMediaPasteZone();
 }
+
+// ===================== MEDIA PASTE ZONE =====================
+function initMediaPasteZone(){
+  const zone = document.getElementById('media-paste-zone');
+  if(!zone) return;
+
+  let isActive = false;
+
+  function setActive(v){
+    isActive = v;
+    if(v){
+      zone.classList.add('pasting');
+      zone.querySelector('.media-paste-zone-text').innerHTML =
+        '<strong style="color:var(--primary)">已激活</strong> — 现在按 <strong>Ctrl+V</strong> 粘贴图片';
+    } else {
+      zone.classList.remove('pasting');
+      zone.querySelector('.media-paste-zone-text').innerHTML =
+        '点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动';
+    }
+  }
+
+  zone.addEventListener('click', (e)=>{
+    if(e.target.closest('select')) return;
+    setActive(true);
+    zone.focus && zone.focus();
+  });
+
+  // Deactivate when clicking outside
+  document.addEventListener('click', function deact(e){
+    if(!zone.contains(e.target)){
+      setActive(false);
+      document.removeEventListener('click', deact);
+    }
+  });
+
+  // Global paste handler
+  const pasteHandler = async (e) => {
+    if(!isActive) return;
+    const sel = document.getElementById('media-paste-act-select');
+    const actId = sel ? sel.value : '';
+    if(!actId){
+      showNotif('请先选择目标活动', true);
+      return;
+    }
+    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+    if(!items) return;
+    const imageItems = [...items].filter(it=>it.type.startsWith('image/'));
+    if(!imageItems.length){ showNotif('剪贴板中没有图片', true); return; }
+    e.preventDefault();
+    showNotif('正在处理粘贴的图片…');
+    for(const item of imageItems){
+      const file = item.getAsFile();
+      if(file) await processFiles([file], actId);
+    }
+    // Refresh media view to show newly added image
+    setActive(false);
+    renderMain();
+  };
+
+  document.addEventListener('paste', pasteHandler);
+
+  // Cleanup when navigating away (tab switch triggers renderMain which re-creates the view)
+  const origRender = window._mediaPasteCleanup;
+  if(origRender) origRender();
+  window._mediaPasteCleanup = () => document.removeEventListener('paste', pasteHandler);
+}
+// ===================== END MEDIA PASTE ZONE =====================
 
 function openLightboxFromMedia(actId, attId){
   _lbActId=actId; 
