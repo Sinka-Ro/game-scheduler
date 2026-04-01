@@ -1433,11 +1433,31 @@ function buildSnapshot(){
   const prunedDeleted = {};
   Object.entries(_deletedKeys).forEach(([k,ts])=>{ if(ts>cutoff) prunedDeleted[k]=ts; });
   _deletedKeys = prunedDeleted;
+
+  // Build attachment INDEX (metadata only, NO base64/data field)
+  // This lets cloud peers know which attachments exist without bloating the snapshot
+  const attachmentIndex = {};
+  Object.entries(attachments).forEach(([actId, atts])=>{
+    if(atts && atts.length){
+      attachmentIndex[actId] = atts.map(att=>({
+        id:         att.id,
+        name:       att.name,
+        type:       att.type,
+        size:       att.size || 0,
+        addedBy:    att.addedBy || '',
+        addedAt:    att.addedAt || '',
+        storagePath:att.storagePath || ''
+        // NOTE: att.data (base64) intentionally excluded — stored separately
+      }));
+    }
+  });
+
   return { activities:activities.map(normalizeActivity), GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300),
            reports, REPORT_TAGS, REPORT_TAG_COLORS,
            _deletedKeys,
+           _attachmentIndex: attachmentIndex,
            savedAt:ts(), savedAtMs:revision,
            _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
 }
@@ -1510,7 +1530,20 @@ function applySnapshot(d, opts){
   if(d.GAME_CAT_COLORS) Object.assign(GAME_CAT_COLORS,d.GAME_CAT_COLORS);
   if(d.GAME_CAT_TEXT)   Object.assign(GAME_CAT_TEXT,d.GAME_CAT_TEXT);
   if(Array.isArray(d.opLogs)) opLogs=d.opLogs;
-  // attachments loaded separately via sbReadAttachments()
+  // Merge attachment index from snapshot — adds metadata for attachments we don't have locally
+  // (e.g. images uploaded by teammates). Full data loaded separately via sbReadAttachments().
+  if(d._attachmentIndex && typeof d._attachmentIndex === 'object'){
+    Object.entries(d._attachmentIndex).forEach(([actId, indexAtts])=>{
+      if(!Array.isArray(indexAtts) || !indexAtts.length) return;
+      const local = attachments[actId] || [];
+      const localIds = new Set(local.map(a=>a.id));
+      // Add metadata stubs for attachments not yet in local store
+      const stubs = indexAtts.filter(a=>!localIds.has(a.id));
+      if(stubs.length){
+        attachments[actId] = [...local, ...stubs];
+      }
+    });
+  }
   if(Array.isArray(d.reports)) reports=d.reports;
   if(Array.isArray(d.REPORT_TAGS)&&d.REPORT_TAGS.length) REPORT_TAGS=d.REPORT_TAGS;
   if(d.REPORT_TAG_COLORS) Object.assign(REPORT_TAG_COLORS,d.REPORT_TAG_COLORS);
@@ -1662,6 +1695,30 @@ async function saveAttachmentsFor(actId){
   }
 }
 
+
+// ─── Strip base64 image/video data before cloud upload ───
+// Keeps the snapshot lean: metadata stays, binary data goes.
+// The actual image data lives either in localStorage (_attachments)
+// or in separate per-activity Supabase rows (att_{actId}).
+function stripBase64FromSnapshot(snapshot){
+  if(!snapshot) return snapshot;
+  const clean = Object.assign({}, snapshot);
+  // Remove the full attachments blob if it somehow got attached
+  delete clean._attachments;
+  // Clean _attachmentIndex: already metadata-only, but just in case
+  if(clean._attachmentIndex){
+    const idx = {};
+    Object.entries(clean._attachmentIndex).forEach(([actId, atts])=>{
+      idx[actId] = (atts||[]).map(att=>{
+        const {data, ...meta} = att; // eslint-disable-line no-unused-vars
+        return meta;
+      });
+    });
+    clean._attachmentIndex = idx;
+  }
+  return clean;
+}
+
 async function _doSave(){
   _saveTimer = null;
   if(!_sbReady||!_sbUrl||!_sbKey){
@@ -1707,10 +1764,15 @@ async function _doSave(){
     persistSnapshotToLocal(snapshot);
     updateBarTs();
 
-    await sbUpsertRow('main_data', snapshot);
+    // Strip any base64 data from snapshot before sending to cloud
+    // (belt-and-suspenders: buildSnapshot should already exclude them,
+    //  but local _attachments loaded from localStorage could slip through)
+    const cloudPayload = stripBase64FromSnapshot(snapshot);
+    const payloadKB = Math.round(JSON.stringify(cloudPayload).length / 1024);
+    await sbUpsertRow('main_data', cloudPayload);
     _syncLastMainRev = _lastLocalSaveRev;
     _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-    setBarState('saved',`已同步到云端 · ${ts()}`);
+    setBarState('saved',`已同步到云端 · ${ts()} · 主快照 ${payloadKB}KB`);
     // After a successful save, update in-memory activities to match what was saved
     // so subsequent saves don't create a new merge conflict with the same data
     activities = finalActivities;
