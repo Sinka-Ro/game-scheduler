@@ -312,6 +312,16 @@ textarea{resize:vertical;min-height:64px}
 .media-paste-zone-text{font-size:12px;color:var(--text2);line-height:1.5}
 .media-paste-zone-sub{font-size:11px;color:var(--text3);margin-top:2px}
 .media-act-selector{font-size:12px;padding:4px 8px;border:1px solid var(--border2);border-radius:5px;outline:none;color:var(--text);background:var(--bg);max-width:200px}
+
+/* ── Media upload zone (drag + file + paste) ── */
+.media-upload-zone{display:flex;gap:0;margin:0 16px 12px;border:2px dashed var(--border2);border-radius:8px;background:var(--bg);overflow:hidden;transition:border-color .15s}
+.media-upload-zone.drag-over{border-color:var(--primary);background:var(--primary-light)}
+.media-upload-droparea{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 12px;cursor:default;text-align:center;min-height:90px;transition:background .15s}
+.media-upload-droparea.drag-over{background:var(--primary-light)}
+.media-upload-drop-icon{font-size:24px;margin-bottom:4px;line-height:1}
+.media-upload-drop-main{font-size:12px;color:var(--text2);font-weight:500}
+.media-upload-drop-sub{font-size:10px;color:var(--text3);margin-top:5px}
+.media-upload-side{width:150px;flex-shrink:0;border-left:1px solid var(--border);padding:12px 14px;display:flex;flex-direction:column;background:var(--bg2)}
 </style>
 </head>
 <body>
@@ -568,7 +578,7 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-const CLOUD_SYNC_POLL_MS = 5000;
+const CLOUD_SYNC_POLL_MS = 15000; // 15s poll — reduced from 5s to ease DB load
 let _clientId = '';
 let _syncChannel = null;
 let _syncPollTimer = null;
@@ -1048,8 +1058,9 @@ function getAttachmentsSignature(src){
       att.type || '',
       att.name || '',
       att.addedAt || '',
-      att.size || 0,
-      String(att.data || '').length
+      att.size || 0
+      // att.data (base64) excluded — cloud has metadata only, local has base64;
+      // including data length would make signatures always differ → infinite re-fetch
     ].join(':')).join(',');
     return `${actId}[${items}]`;
   }).join('|');
@@ -1175,9 +1186,13 @@ async function refreshCloudState(opts){
   try{
     const cloud = await sbReadRow('main_data');
     if(!cloud) return false;
-    await sbReadAttachments();
     const nextRev = getSnapshotRevision(cloud);
-    const nextAttSig = getAttachmentsSignature(attachments);
+    // Only fetch attachments if main record changed (avoids expensive query every poll)
+    let nextAttSig = _syncLastAttachmentSig;
+    if(nextRev > _syncLastMainRev || options.force){
+      await sbReadAttachments();
+      nextAttSig = getAttachmentsSignature(attachments);
+    }
     const changed = !!options.force || nextRev > _syncLastMainRev || nextAttSig !== _syncLastAttachmentSig;
     if(!changed) return false;
     const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
@@ -1423,11 +1438,31 @@ function buildSnapshot(){
   const prunedDeleted = {};
   Object.entries(_deletedKeys).forEach(([k,ts])=>{ if(ts>cutoff) prunedDeleted[k]=ts; });
   _deletedKeys = prunedDeleted;
+
+  // Build attachment INDEX (metadata only, NO base64/data field)
+  // This lets cloud peers know which attachments exist without bloating the snapshot
+  const attachmentIndex = {};
+  Object.entries(attachments).forEach(([actId, atts])=>{
+    if(atts && atts.length){
+      attachmentIndex[actId] = atts.map(att=>({
+        id:         att.id,
+        name:       att.name,
+        type:       att.type,
+        size:       att.size || 0,
+        addedBy:    att.addedBy || '',
+        addedAt:    att.addedAt || '',
+        storagePath:att.storagePath || ''
+        // NOTE: att.data (base64) intentionally excluded — stored separately
+      }));
+    }
+  });
+
   return { activities:activities.map(normalizeActivity), GAMES, ACT_TYPES, TYPE_COLORS,
            GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT,
            opLogs:opLogs.slice(0,300),
            reports, REPORT_TAGS, REPORT_TAG_COLORS,
            _deletedKeys,
+           _attachmentIndex: attachmentIndex,
            savedAt:ts(), savedAtMs:revision,
            _meta:{ revision, clientId:getClientId(), userId:currentUser.id||'', userName:currentUser.name||'' } };
 }
@@ -1500,7 +1535,20 @@ function applySnapshot(d, opts){
   if(d.GAME_CAT_COLORS) Object.assign(GAME_CAT_COLORS,d.GAME_CAT_COLORS);
   if(d.GAME_CAT_TEXT)   Object.assign(GAME_CAT_TEXT,d.GAME_CAT_TEXT);
   if(Array.isArray(d.opLogs)) opLogs=d.opLogs;
-  // attachments loaded separately via sbReadAttachments()
+  // Merge attachment index from snapshot — adds metadata for attachments we don't have locally
+  // (e.g. images uploaded by teammates). Full data loaded separately via sbReadAttachments().
+  if(d._attachmentIndex && typeof d._attachmentIndex === 'object'){
+    Object.entries(d._attachmentIndex).forEach(([actId, indexAtts])=>{
+      if(!Array.isArray(indexAtts) || !indexAtts.length) return;
+      const local = attachments[actId] || [];
+      const localIds = new Set(local.map(a=>a.id));
+      // Add metadata stubs for attachments not yet in local store
+      const stubs = indexAtts.filter(a=>!localIds.has(a.id));
+      if(stubs.length){
+        attachments[actId] = [...local, ...stubs];
+      }
+    });
+  }
   if(Array.isArray(d.reports)) reports=d.reports;
   if(Array.isArray(d.REPORT_TAGS)&&d.REPORT_TAGS.length) REPORT_TAGS=d.REPORT_TAGS;
   if(d.REPORT_TAG_COLORS) Object.assign(REPORT_TAG_COLORS,d.REPORT_TAG_COLORS);
@@ -1512,20 +1560,33 @@ function applySnapshot(d, opts){
 // Attachments → row id='att_{actId}' (one row per activity, base64 images here)
 // This split keeps main_data small (<50KB) and prevents sync failures from large payloads.
 
+
+// ─── Fetch with timeout (prevents init hanging forever) ───
+async function fetchWithTimeout(url, opts={}, ms=8000){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), ms);
+  try{
+    const r = await fetch(url, {...opts, signal: ctrl.signal});
+    return r;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 async function sbUpsertRow(rowId, payload){
   const base = `${_sbUrl}/rest/v1/${_sbTable}`;
   const hdrs = { 'Content-Type':'application/json', 'apikey':_sbKey,
                  'Authorization':'Bearer '+_sbKey, 'Prefer':'return=minimal,resolution=merge-duplicates' };
   const body = JSON.stringify({ id: rowId, payload: JSON.stringify(payload) });
   // Use upsert (POST with merge-duplicates) — simpler and avoids PATCH/INSERT dance
-  const r = await fetch(base, { method:'POST', headers:hdrs, body });
+  const r = await fetchWithTimeout(base, { method:'POST', headers:hdrs, body }, 10000);
   if(!r.ok){ const t=await r.text(); throw new Error(`写入失败 ${r.status}: ${t.slice(0,120)}`); }
 }
 
 async function sbReadRow(rowId){
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=payload`, {
+  const r = await fetchWithTimeout(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
-  });
+  }, 8000);
   if(!r.ok) throw new Error(`读取失败 ${r.status}`);
   const rows = await r.json();
   if(!rows||!rows.length) return null;
@@ -1533,25 +1594,33 @@ async function sbReadRow(rowId){
 }
 
 async function sbReadAttachments(){
-  // Fetch all attachment rows in one query
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
+  // Fetch all attachment metadata rows in one query
+  const r = await fetchWithTimeout(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
-  });
+  }, 8000);
   if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
   const rows = await r.json();
-  const nextAttachments = {};
   if(!rows||!rows.length){
-    attachments = nextAttachments;
-    return { items: attachments, signature:'' };
+    return { items: attachments, signature:getAttachmentsSignature(attachments) };
   }
+  // Merge cloud metadata with local base64 data
+  // Cloud rows only have metadata (no base64); local may have base64 for locally-uploaded images
+  const localCopy = attachments; // preserve existing local data
   rows.forEach(row=>{
     try{
-      const actId = row.id.slice(4); // strip "att_" prefix
-      const atts  = JSON.parse(row.payload);
-      if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
+      const actId = row.id.replace(/^att_/, '');
+      const cloudAtts = JSON.parse(row.payload);
+      if(!Array.isArray(cloudAtts)||!cloudAtts.length) return;
+      const localAtts = localCopy[actId] || [];
+      const localMap  = new Map(localAtts.map(a=>[a.id, a]));
+      // Merge: cloud metadata + local base64 data where available
+      attachments[actId] = cloudAtts.map(cloudAtt=>{
+        const localAtt = localMap.get(cloudAtt.id);
+        if(localAtt && localAtt.data) return {...cloudAtt, data: localAtt.data};
+        return cloudAtt; // metadata only — image will show as broken until locally uploaded
+      });
     }catch(e){}
   });
-  attachments = nextAttachments;
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
@@ -1565,7 +1634,10 @@ async function sbSaveAttachments(actId){
     }).catch(()=>{});
     return;
   }
-  await sbUpsertRow(`att_${actId}`, atts);
+  // Strip base64 data before writing to cloud — only store metadata
+  // base64 stays in localStorage only; if storagePath exists the URL is the source of truth
+  const metaOnly = atts.map(({data, ...meta})=>meta);
+  await sbUpsertRow(`att_${actId}`, metaOnly);
 }
 
 // ─── Load ───
@@ -1592,7 +1664,10 @@ async function loadData(){
     _sbTable = effectiveTable;
     _sb = null;
     try{
-      const cloud = await sbReadRow('main_data');
+      // Hard timeout: if cloud read takes >10s, fall through to local data
+      const cloudPromise = sbReadRow('main_data');
+      const timeoutPromise = new Promise((_,rej)=>setTimeout(()=>rej(new Error('云端读取超时，已切换本地模式')),10000));
+      const cloud = await Promise.race([cloudPromise, timeoutPromise]);
       if(cloud && cloud.savedAt){
         // If our local snapshot is NEWER than cloud (e.g. user edited then refreshed before
         // the 800ms save-debounce could push to cloud), keep local edits — localWins=true.
@@ -1607,14 +1682,16 @@ async function loadData(){
       if(cloud) persistSnapshotToLocal(buildSnapshot());
       updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
-      sbReadAttachments().then(()=>{
-        const latest = lsLoad() || {};
-        latest._attachments = attachments;
-        // Save the merged snapshot (already in localStorage from above), just update attachments.
-        lsSave(latest);
-        _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-        if(currentUser.id) renderMain();
-      }).catch(e=>console.warn('Attachment load failed',e));
+      // Load attachments in background — don't block initial render
+      setTimeout(()=>{
+        sbReadAttachments().then(()=>{
+          const latest = lsLoad() || {};
+          latest._attachments = attachments;
+          lsSave(latest);
+          _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+          if(currentUser.id) renderMain(); // re-render once images available
+        }).catch(e=>console.warn('Attachment load failed',e));
+      }, 100);
     }catch(e){
       console.warn('Supabase load failed',e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
@@ -1650,6 +1727,30 @@ async function saveAttachmentsFor(actId){
       _syncLastAttachmentSig = _lastLocalAttachmentSig;
     });
   }
+}
+
+
+// ─── Strip base64 image/video data before cloud upload ───
+// Keeps the snapshot lean: metadata stays, binary data goes.
+// The actual image data lives either in localStorage (_attachments)
+// or in separate per-activity Supabase rows (att_{actId}).
+function stripBase64FromSnapshot(snapshot){
+  if(!snapshot) return snapshot;
+  const clean = Object.assign({}, snapshot);
+  // Remove the full attachments blob if it somehow got attached
+  delete clean._attachments;
+  // Clean _attachmentIndex: already metadata-only, but just in case
+  if(clean._attachmentIndex){
+    const idx = {};
+    Object.entries(clean._attachmentIndex).forEach(([actId, atts])=>{
+      idx[actId] = (atts||[]).map(att=>{
+        const {data, ...meta} = att; // eslint-disable-line no-unused-vars
+        return meta;
+      });
+    });
+    clean._attachmentIndex = idx;
+  }
+  return clean;
 }
 
 async function _doSave(){
@@ -1697,10 +1798,15 @@ async function _doSave(){
     persistSnapshotToLocal(snapshot);
     updateBarTs();
 
-    await sbUpsertRow('main_data', snapshot);
+    // Strip any base64 data from snapshot before sending to cloud
+    // (belt-and-suspenders: buildSnapshot should already exclude them,
+    //  but local _attachments loaded from localStorage could slip through)
+    const cloudPayload = stripBase64FromSnapshot(snapshot);
+    const payloadKB = Math.round(JSON.stringify(cloudPayload).length / 1024);
+    await sbUpsertRow('main_data', cloudPayload);
     _syncLastMainRev = _lastLocalSaveRev;
     _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-    setBarState('saved',`已同步到云端 · ${ts()}`);
+    setBarState('saved',`已同步到云端 · ${ts()} · 主快照 ${payloadKB}KB`);
     // After a successful save, update in-memory activities to match what was saved
     // so subsequent saves don't create a new merge conflict with the same data
     activities = finalActivities;
@@ -4413,18 +4519,24 @@ function renderMediaView(container){
   // Paste zone (only for editors/admins)
   const canEdit=currentUser.role!=='viewer';
   const pasteZoneHtml = canEdit ? `
-    <div class="media-paste-zone" id="media-paste-zone" title="点击此区域后 Ctrl+V 粘贴截图，图片将存入所选活动类型">
-      <div class="media-paste-zone-icon">📋</div>
-      <div style="flex:1;min-width:0">
-        <div class="media-paste-zone-text">点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动类型</div>
-        <div class="media-paste-zone-sub">系统将自动匹配该类型下最近的活动作为归属</div>
+    <div class="media-upload-zone" id="media-paste-zone">
+      <div class="media-upload-droparea" id="media-droparea">
+        <input type="file" id="media-file-input" accept="image/*" multiple style="display:none" onchange="mediaFileSelected(event)">
+        <div class="media-upload-drop-icon">🖼</div>
+        <div class="media-upload-drop-main">拖拽图片到此处，或</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;justify-content:center">
+          <button class="btn sm primary" onclick="document.getElementById('media-file-input').click()" style="font-size:11px">选择文件上传</button>
+          <span style="font-size:11px;color:var(--text3)">· 或 <strong>Ctrl+V</strong> 粘贴截图</span>
+        </div>
+        <div class="media-upload-drop-sub">支持 JPG / PNG / GIF，可多选，单文件最大 5MB</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-        <div style="font-size:11px;color:var(--text3);font-weight:500">目标活动类型</div>
-        <select class="media-act-selector" id="media-paste-type-select" onchange="mediaPasteType=this.value">
+      <div class="media-upload-side">
+        <div style="font-size:11px;color:var(--text3);font-weight:500;margin-bottom:4px">目标活动类型 <span style="color:#d93025">*</span></div>
+        <select class="media-act-selector" id="media-paste-type-select" onchange="mediaPasteType=this.value" style="width:100%;max-width:100%">
           <option value="">— 请选择类型 —</option>
           ${pasteTypeOptions}
         </select>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5">自动归属到该类型<br>下最近的活动</div>
       </div>
     </div>` : '';
 
@@ -4497,53 +4609,22 @@ function renderMediaView(container){
   if(canEdit) initMediaPasteZone();
 }
 
-// ===================== MEDIA PASTE ZONE =====================
+// ===================== MEDIA UPLOAD ZONE (drag + file + paste) =====================
 function initMediaPasteZone(){
-  const zone = document.getElementById('media-paste-zone');
-  if(!zone) return;
+  const zone     = document.getElementById('media-paste-zone');
+  const droparea = document.getElementById('media-droparea');
+  if(!zone || !droparea) return;
 
   // Restore previously selected type
   const sel = document.getElementById('media-paste-type-select');
   if(sel && mediaPasteType) sel.value = mediaPasteType;
 
-  let isActive = false;
-
-  function setActive(v){
-    isActive = v;
-    if(v){
-      zone.classList.add('pasting');
-      zone.querySelector('.media-paste-zone-text').innerHTML =
-        '<strong style="color:var(--primary)">已激活</strong> — 现在按 <strong>Ctrl+V</strong> 粘贴图片';
-    } else {
-      zone.classList.remove('pasting');
-      zone.querySelector('.media-paste-zone-text').innerHTML =
-        '点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动类型';
-    }
-  }
-
-  zone.addEventListener('click', (e)=>{
-    if(e.target.closest('select')) return;
-    setActive(true);
-    zone.focus && zone.focus();
-  });
-
-  // Deactivate when clicking outside
-  document.addEventListener('click', function deact(e){
-    if(!zone.contains(e.target)){
-      setActive(false);
-      document.removeEventListener('click', deact);
-    }
-  });
-
-  // Global paste handler
-  const pasteHandler = async (e) => {
-    if(!isActive) return;
+  // ── Shared upload helper ──
+  async function uploadFiles(files){
     const actType = mediaPasteType;
-    if(!actType){
-      showNotif('请先选择目标活动类型', true);
-      return;
-    }
-    // Find the most recent activity of that type (within current game filter)
+    if(!actType){ showNotif('请先选择目标活动类型', true); return; }
+    const imgFiles = [...files].filter(f => f.type.startsWith('image/'));
+    if(!imgFiles.length){ showNotif('没有可上传的图片文件', true); return; }
     const candidates = activities
       .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
       .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
@@ -4552,28 +4633,72 @@ function initMediaPasteZone(){
       return;
     }
     const actId = candidates[0].id;
+    showNotif(`正在上传 ${imgFiles.length} 张图片到「${candidates[0].name}」…`);
+    for(const file of imgFiles) await processFiles([file], actId);
+    renderMain();
+  }
+
+  // ── Drag & drop on droparea ──
+  droparea.addEventListener('dragover', e=>{
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('drag-over');
+    droparea.classList.add('drag-over');
+  });
+  droparea.addEventListener('dragleave', e=>{
+    e.stopPropagation();
+    zone.classList.remove('drag-over');
+    droparea.classList.remove('drag-over');
+  });
+  droparea.addEventListener('drop', async e=>{
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('drag-over');
+    droparea.classList.remove('drag-over');
+    await uploadFiles(e.dataTransfer.files);
+  });
+
+  // ── Global paste handler (always active while media tab open) ──
+  const pasteHandler = async (e) => {
+    // Only intercept if not typing in an input/select/textarea
+    if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
     const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
     if(!items) return;
-    const imageItems = [...items].filter(it=>it.type.startsWith('image/'));
-    if(!imageItems.length){ showNotif('剪贴板中没有图片', true); return; }
+    const imageItems = [...items].filter(it => it.type.startsWith('image/'));
+    if(!imageItems.length) return;
     e.preventDefault();
-    showNotif(`正在上传图片到「${candidates[0].name}」…`);
-    for(const item of imageItems){
-      const file = item.getAsFile();
-      if(file) await processFiles([file], actId);
-    }
-    setActive(false);
-    renderMain();
+    const fileList = imageItems.map(it => it.getAsFile()).filter(Boolean);
+    await uploadFiles(fileList);
   };
-
   document.addEventListener('paste', pasteHandler);
 
-  // Cleanup when navigating away (tab switch triggers renderMain which re-creates the view)
-  const origRender = window._mediaPasteCleanup;
-  if(origRender) origRender();
+  // ── Cleanup on tab switch ──
+  const prev = window._mediaPasteCleanup;
+  if(prev) prev();
   window._mediaPasteCleanup = () => document.removeEventListener('paste', pasteHandler);
 }
-// ===================== END MEDIA PASTE ZONE =====================
+
+// Called by the file input's onchange
+async function mediaFileSelected(e){
+  const files = e.target.files;
+  if(!files || !files.length) return;
+  const actType = mediaPasteType;
+  if(!actType){ showNotif('请先选择目标活动类型', true); e.target.value=''; return; }
+  const candidates = activities
+    .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
+    .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+  if(!candidates.length){
+    showNotif(`找不到「${actType}」类型的活动，请先创建相关活动`, true);
+    e.target.value=''; return;
+  }
+  const actId = candidates[0].id;
+  const imgFiles = [...files].filter(f => f.type.startsWith('image/'));
+  if(!imgFiles.length){ showNotif('请选择图片文件', true); e.target.value=''; return; }
+  showNotif(`正在上传 ${imgFiles.length} 张图片到「${candidates[0].name}」…`);
+  for(const file of imgFiles) await processFiles([file], actId);
+  e.target.value = '';
+  renderMain();
+}
+// ===================== END MEDIA UPLOAD ZONE =====================
 
 function openLightboxFromMedia(actId, attId){
   _lbActId=actId; 
@@ -5349,28 +5474,42 @@ initStatusBar();
 })();
 
 async function init(){
-  await loadData();
-  getSB(); // initialize client
   const ld=document.getElementById('cloud-loader');
+  try{
+    await loadData();
+  }catch(e){
+    console.warn('loadData error (non-fatal):', e);
+    // loadData failed but we can still continue — local data already applied above
+  }
 
-  if(getSB()){
-    // Supabase is configured — check if already logged in
-    const loggedIn = await checkAuthState();
-    if(ld) ld.remove();
-    if(!loggedIn){
-      // Show login/register screen — all visitors see this, no admin bypass
+  if(ld) ld.remove(); // Always remove loader here — never hang again
+
+  try{
+    const sb = getSB();
+    if(sb){
+      // Supabase configured — check session with timeout
+      const authPromise = checkAuthState();
+      const authTimeout = new Promise(res=>setTimeout(()=>res(false), 8000));
+      const loggedIn = await Promise.race([authPromise, authTimeout]);
+      if(!loggedIn){
+        currentUser={id:'',name:'',role:'none',email:''};
+        updateTopbarUser();
+        showAuthOverlay('login');
+      }
+      // If loggedIn, handleAuthUser() already called renderMain()
+    } else {
+      // Supabase not configured yet
       currentUser={id:'',name:'',role:'none',email:''};
       updateTopbarUser();
-      showAuthOverlay('login');
+      showAuthOverlay('nosupabase');
     }
-    // handleAuthUser() calls renderMain() on successful login
-  } else {
-    // Supabase not yet configured in this file
-    // Only the admin who is setting up for the first time should see the setup form
-    if(ld) ld.remove();
+  }catch(e){
+    console.error('Auth check failed:', e);
     currentUser={id:'',name:'',role:'none',email:''};
     updateTopbarUser();
-    showAuthOverlay('nosupabase');
+    // Show login (not nosupabase) — SB is likely configured, just had a hiccup
+    showAuthOverlay(getSB() ? 'login' : 'nosupabase');
+    setBarState('error', `连接异常，请刷新重试（${e.message}）`);
   }
 }
 
