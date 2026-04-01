@@ -4295,16 +4295,49 @@ function _renderLightbox(){
     </div>`;
   }
 
+  const canEdit=currentUser.role!=='viewer';
+  const deleteBtn = canEdit
+    ? `<button onclick="lbDeleteCurrent()" style="background:rgba(217,48,37,.75);border:none;color:#fff;padding:6px 18px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:500;transition:background .15s" onmouseover="this.style.background='rgba(217,48,37,1)'" onmouseout="this.style.background='rgba(217,48,37,.75)'">🗑 删除</button>`
+    : '';
+
   lb.innerHTML=`
     <button class="lightbox-close" onclick="document.getElementById('lightbox-el').remove()">✕</button>
     ${mediaHtml}
     <div class="lightbox-caption">${att.name} · ${att.addedBy} · ${att.addedAt}</div>
-    ${atts.length>1?`<div class="lightbox-nav">
-      <button onclick="_lbIdx=(_lbIdx-1+${atts.length})%${atts.length};_renderLightbox()">‹ 上一张</button>
-      <span style="color:#9ca3af;font-size:12px;align-self:center">${_lbIdx+1} / ${atts.length}</span>
-      <button onclick="_lbIdx=(_lbIdx+1)%${atts.length};_renderLightbox()">下一张 ›</button>
-    </div>`:''}`;
+    <div style="display:flex;align-items:center;gap:10px">
+      ${atts.length>1?`<div class="lightbox-nav">
+        <button onclick="_lbIdx=(_lbIdx-1+${atts.length})%${atts.length};_renderLightbox()">‹ 上一张</button>
+        <span style="color:#9ca3af;font-size:12px;align-self:center">${_lbIdx+1} / ${atts.length}</span>
+        <button onclick="_lbIdx=(_lbIdx+1)%${atts.length};_renderLightbox()">下一张 ›</button>
+      </div>`:''}
+      ${deleteBtn}
+    </div>`;
   document.body.appendChild(lb);
+}
+
+function lbDeleteCurrent(){
+  const actId = _lbActId;
+  const atts = attachments[actId]||[];
+  const att = atts[_lbIdx];
+  if(!att) return;
+  // Delete the attachment
+  deleteAttachment(actId, att.id);
+  // Close lightbox if no more images, else re-render with updated index
+  const remaining = attachments[actId]||[];
+  if(!remaining.length){
+    document.getElementById('lightbox-el')?.remove();
+    // Refresh media view if open
+    if(currentTab==='media') renderMain();
+    return;
+  }
+  // Clamp index and re-render
+  if(_lbIdx >= remaining.length) _lbIdx = remaining.length - 1;
+  _renderLightbox();
+  // Refresh media grid in background
+  if(currentTab==='media') setTimeout(()=>{
+    const container = document.getElementById('mainArea');
+    if(container) renderMediaView(container);
+  }, 0);
 }
 
 // ─── Media Library View ───
@@ -4355,26 +4388,26 @@ function renderMediaView(container){
     </div>`;
   }).join('');
 
-  // Activity options for paste selector (filtered by current game)
-  const pasteActOptions = activities
-    .filter(a=>mediaGame==='all'||a.game===mediaGame)
-    .map(a=>`<option value="${a.id}">[${a.game}·${a.type}] ${a.name}</option>`)
-    .join('');
+  // Activity TYPE options for paste selector
+  const pasteTypeOptions = [
+    ...ACT_TYPES.filter(t=> activities.some(a=>(mediaGame==='all'||a.game===mediaGame)&&a.type===t)),
+    ...Array.from(new Set(activities.filter(a=>mediaGame==='all'||a.game===mediaGame).map(a=>a.type))).filter(t=>!ACT_TYPES.includes(t))
+  ].map(t=>`<option value="${t}">${t}</option>`).join('');
 
   // Paste zone (only for editors/admins)
   const canEdit=currentUser.role!=='viewer';
   const pasteZoneHtml = canEdit ? `
-    <div class="media-paste-zone" id="media-paste-zone" title="点击此区域后 Ctrl+V 粘贴截图，图片将存入所选活动">
+    <div class="media-paste-zone" id="media-paste-zone" title="点击此区域后 Ctrl+V 粘贴截图，图片将存入所选活动类型">
       <div class="media-paste-zone-icon">📋</div>
       <div style="flex:1;min-width:0">
-        <div class="media-paste-zone-text">点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动</div>
-        <div class="media-paste-zone-sub">图片将作为附件存入所选活动，并在媒体库中展示</div>
+        <div class="media-paste-zone-text">点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动类型</div>
+        <div class="media-paste-zone-sub">系统将自动匹配该类型下最近的活动作为归属</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-        <div style="font-size:11px;color:var(--text3);font-weight:500">目标活动</div>
-        <select class="media-act-selector" id="media-paste-act-select">
-          <option value="">— 请选择活动 —</option>
-          ${pasteActOptions}
+        <div style="font-size:11px;color:var(--text3);font-weight:500">目标活动类型</div>
+        <select class="media-act-selector" id="media-paste-type-select">
+          <option value="">— 请选择类型 —</option>
+          ${pasteTypeOptions}
         </select>
       </div>
     </div>` : '';
@@ -4464,7 +4497,7 @@ function initMediaPasteZone(){
     } else {
       zone.classList.remove('pasting');
       zone.querySelector('.media-paste-zone-text').innerHTML =
-        '点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动';
+        '点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动类型';
     }
   }
 
@@ -4485,23 +4518,31 @@ function initMediaPasteZone(){
   // Global paste handler
   const pasteHandler = async (e) => {
     if(!isActive) return;
-    const sel = document.getElementById('media-paste-act-select');
-    const actId = sel ? sel.value : '';
-    if(!actId){
-      showNotif('请先选择目标活动', true);
+    const sel = document.getElementById('media-paste-type-select');
+    const actType = sel ? sel.value : '';
+    if(!actType){
+      showNotif('请先选择目标活动类型', true);
       return;
     }
+    // Find the most recent activity of that type (within current game filter)
+    const candidates = activities
+      .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
+      .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+    if(!candidates.length){
+      showNotif(`找不到「${actType}」类型的活动，请先创建相关活动`, true);
+      return;
+    }
+    const actId = candidates[0].id;
     const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
     if(!items) return;
     const imageItems = [...items].filter(it=>it.type.startsWith('image/'));
     if(!imageItems.length){ showNotif('剪贴板中没有图片', true); return; }
     e.preventDefault();
-    showNotif('正在处理粘贴的图片…');
+    showNotif(`正在上传图片到「${candidates[0].name}」…`);
     for(const item of imageItems){
       const file = item.getAsFile();
       if(file) await processFiles([file], actId);
     }
-    // Refresh media view to show newly added image
     setActive(false);
     renderMain();
   };
