@@ -578,7 +578,7 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-const CLOUD_SYNC_POLL_MS = 5000;
+const CLOUD_SYNC_POLL_MS = 15000; // 15s poll — reduced from 5s to ease DB load
 let _clientId = '';
 let _syncChannel = null;
 let _syncPollTimer = null;
@@ -1185,9 +1185,13 @@ async function refreshCloudState(opts){
   try{
     const cloud = await sbReadRow('main_data');
     if(!cloud) return false;
-    await sbReadAttachments();
     const nextRev = getSnapshotRevision(cloud);
-    const nextAttSig = getAttachmentsSignature(attachments);
+    // Only fetch attachments if main record changed (avoids expensive query every poll)
+    let nextAttSig = _syncLastAttachmentSig;
+    if(nextRev > _syncLastMainRev || options.force){
+      await sbReadAttachments();
+      nextAttSig = getAttachmentsSignature(attachments);
+    }
     const changed = !!options.force || nextRev > _syncLastMainRev || nextAttSig !== _syncLastAttachmentSig;
     if(!changed) return false;
     const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
@@ -1576,25 +1580,33 @@ async function sbReadRow(rowId){
 }
 
 async function sbReadAttachments(){
-  // Fetch all attachment rows in one query
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
+  // Fetch all attachment metadata rows in one query
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_%2A&select=id,payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
   });
   if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
   const rows = await r.json();
-  const nextAttachments = {};
   if(!rows||!rows.length){
-    attachments = nextAttachments;
-    return { items: attachments, signature:'' };
+    return { items: attachments, signature:getAttachmentsSignature(attachments) };
   }
+  // Merge cloud metadata with local base64 data
+  // Cloud rows only have metadata (no base64); local may have base64 for locally-uploaded images
+  const localCopy = attachments; // preserve existing local data
   rows.forEach(row=>{
     try{
-      const actId = row.id.slice(4); // strip "att_" prefix
-      const atts  = JSON.parse(row.payload);
-      if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
+      const actId = row.id.replace(/^att_/, '');
+      const cloudAtts = JSON.parse(row.payload);
+      if(!Array.isArray(cloudAtts)||!cloudAtts.length) return;
+      const localAtts = localCopy[actId] || [];
+      const localMap  = new Map(localAtts.map(a=>[a.id, a]));
+      // Merge: cloud metadata + local base64 data where available
+      attachments[actId] = cloudAtts.map(cloudAtt=>{
+        const localAtt = localMap.get(cloudAtt.id);
+        if(localAtt && localAtt.data) return {...cloudAtt, data: localAtt.data};
+        return cloudAtt; // metadata only — image will show as broken until locally uploaded
+      });
     }catch(e){}
   });
-  attachments = nextAttachments;
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
@@ -1608,7 +1620,10 @@ async function sbSaveAttachments(actId){
     }).catch(()=>{});
     return;
   }
-  await sbUpsertRow(`att_${actId}`, atts);
+  // Strip base64 data before writing to cloud — only store metadata
+  // base64 stays in localStorage only; if storagePath exists the URL is the source of truth
+  const metaOnly = atts.map(({data, ...meta})=>meta);
+  await sbUpsertRow(`att_${actId}`, metaOnly);
 }
 
 // ─── Load ───
@@ -1650,14 +1665,16 @@ async function loadData(){
       if(cloud) persistSnapshotToLocal(buildSnapshot());
       updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
-      sbReadAttachments().then(()=>{
-        const latest = lsLoad() || {};
-        latest._attachments = attachments;
-        // Save the merged snapshot (already in localStorage from above), just update attachments.
-        lsSave(latest);
-        _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-        if(currentUser.id) renderMain();
-      }).catch(e=>console.warn('Attachment load failed',e));
+      // Load attachments in background — don't block initial render
+      setTimeout(()=>{
+        sbReadAttachments().then(()=>{
+          const latest = lsLoad() || {};
+          latest._attachments = attachments;
+          lsSave(latest);
+          _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+          if(currentUser.id) renderMain(); // re-render once images available
+        }).catch(e=>console.warn('Attachment load failed',e));
+      }, 100);
     }catch(e){
       console.warn('Supabase load failed',e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
