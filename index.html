@@ -1452,7 +1452,7 @@ function buildSnapshot(){
         addedBy:    att.addedBy || '',
         addedAt:    att.addedAt || '',
         storagePath:att.storagePath || ''
-        // NOTE: att.data (base64) intentionally excluded — stored separately
+        // NOTE: att.data (base64) excluded from main snapshot — stored in att_{actId} rows
       }));
     }
   });
@@ -1641,10 +1641,10 @@ async function sbSaveAttachments(actId){
     }).catch(()=>{});
     return;
   }
-  // Strip base64 data before writing to cloud — only store metadata
-  // base64 stays in localStorage only; if storagePath exists the URL is the source of truth
-  const metaOnly = atts.map(({data, ...meta})=>meta);
-  await sbUpsertRow(`att_${actId}`, metaOnly);
+  // Write full attachment data (including base64) to cloud attachment row
+  // This ensures other users can see images uploaded by teammates
+  // Images are already compressed to ~80KB so total size is manageable
+  await sbUpsertRow(`att_${actId}`, atts);
 }
 
 // ─── Load ───
@@ -1737,10 +1737,10 @@ async function saveAttachmentsFor(actId){
 }
 
 
-// ─── Strip base64 image/video data before cloud upload ───
-// Keeps the snapshot lean: metadata stays, binary data goes.
-// The actual image data lives either in localStorage (_attachments)
-// or in separate per-activity Supabase rows (att_{actId}).
+// ─── Strip base64 from MAIN snapshot before cloud upload ───
+// The main_data record stays lean (text only).
+// Full image data (base64) lives in separate att_{actId} rows in Supabase,
+// and also in localStorage for offline access.
 function stripBase64FromSnapshot(snapshot){
   if(!snapshot) return snapshot;
   const clean = Object.assign({}, snapshot);
@@ -4257,40 +4257,10 @@ async function processFiles(files, actId){
       if(!compressed){ showNotif(`「${file.name}」压缩失败，已跳过`,true); continue; }
       attSize = compressed.size;
 
-      if(_sbReady && _sbUrl && _sbKey){
-        // Upload to Supabase Storage
-        try{
-          const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
-          const path = `${game}/${type}/${attId}_${safeName}`;
-          attData = await uploadToStorage(path, compressed, 'image/jpeg');
-          // Store path for deletion later
-          const att = { id:attId, name:file.name, type:'image', size:attSize,
-                        data:attData, storagePath:path, addedBy:currentUser.name, addedAt:ts() };
-          if(!attachments[actId]) attachments[actId]=[];
-          attachments[actId].push(att);
-          refreshAttachList(actId);
-          // Save metadata to database (URL, not base64)
-          saveAttachmentsFor(actId);
-          // Update sync signature immediately so poll doesn't re-fetch and strip base64
-          const _sig = getAttachmentsSignature(attachments);
-          _lastLocalAttachmentSig = _sig;
-          _syncLastAttachmentSig  = _sig;
-          uploaded++;
-          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至80KB以内）`);
-          continue;
-        }catch(e){
-          console.warn('Storage upload failed, falling back to base64', e);
-          showNotif(`图片上传云端失败，改用本地存储: ${e.message}`, true);
-          // Fall through to base64 fallback
-        }
-      }
-      // Fallback: store as base64 (localStorage only)
+      // Always use base64 (compressed) — avoids Storage bucket configuration issues
       const reader = new FileReader();
       await new Promise(resolve=>{
-        reader.onload = ev=>{
-          attData = ev.target.result;
-          resolve();
-        };
+        reader.onload = ev=>{ attData = ev.target.result; resolve(); };
         reader.readAsDataURL(compressed);
       });
     } else {
