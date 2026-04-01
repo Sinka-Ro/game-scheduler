@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>竞品游戏运营活动排期工具 v32-fixed-20260318-01</title>
+<title>竞品游戏运营活动排期工具 v48-fixed-20260401-01</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -4422,7 +4422,7 @@ function renderMediaView(container){
 
   // Paste zone (only for editors/admins)
   const canEdit=currentUser.role!=='viewer';
-  const pasteZoneHtml = canEdit ? `
+  const pasteZoneHtml = false ? `
     <div class="media-upload-zone" id="media-paste-zone">
       <div class="media-upload-droparea" id="media-droparea">
         <input type="file" id="media-file-input" accept="image/*" multiple style="display:none" onchange="mediaFileSelected(event)">
@@ -4510,7 +4510,7 @@ function renderMediaView(container){
   </div>`;
 
   // Init paste zone
-  if(canEdit) initMediaPasteZone();
+  // initMediaPasteZone(); // disabled
 }
 
 // ===================== MEDIA UPLOAD ZONE (drag + file + paste) =====================
