@@ -4326,6 +4326,7 @@ function lbDeleteCurrent(){
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.id = 'lb-del-confirm';
+  ov.style.zIndex = '3000'; // above lightbox (z-index:2000)
   ov.innerHTML = `<div class="confirm-box">
     <div class="confirm-title">确认删除图片</div>
     <div class="confirm-desc" style="word-break:break-all">确定要删除「${att.name}」吗？<br>此操作不可撤销。</div>
