@@ -1597,27 +1597,34 @@ async function sbReadAttachments(){
   // Fetch all attachment metadata rows in one query
   const r = await fetchWithTimeout(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
     headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
-  }, 8000);
+  }, 15000);
   if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
   const rows = await r.json();
   if(!rows||!rows.length){
     return { items: attachments, signature:getAttachmentsSignature(attachments) };
   }
   // Merge cloud metadata with local base64 data
-  // Cloud rows only have metadata (no base64); local may have base64 for locally-uploaded images
-  const localCopy = attachments; // preserve existing local data
+  // Deep-copy existing attachments BEFORE any writes so local base64 isn't lost mid-loop
+  const localSnapshot = JSON.parse(JSON.stringify(
+    Object.fromEntries(Object.entries(attachments).map(([k,v])=>[k, v.map(a=>({...a}))]))
+  ));
   rows.forEach(row=>{
     try{
       const actId = row.id.replace(/^att_/, '');
       const cloudAtts = JSON.parse(row.payload);
       if(!Array.isArray(cloudAtts)||!cloudAtts.length) return;
-      const localAtts = localCopy[actId] || [];
+      const localAtts = localSnapshot[actId] || [];
       const localMap  = new Map(localAtts.map(a=>[a.id, a]));
-      // Merge: cloud metadata + local base64 data where available
+      // Merge: prefer local base64 data; cloud provides metadata for new/teammate attachments
       attachments[actId] = cloudAtts.map(cloudAtt=>{
         const localAtt = localMap.get(cloudAtt.id);
         if(localAtt && localAtt.data) return {...cloudAtt, data: localAtt.data};
-        return cloudAtt; // metadata only — image will show as broken until locally uploaded
+        return cloudAtt;
+      });
+      // Keep any local-only attachments not yet pushed to cloud
+      const cloudIds = new Set(cloudAtts.map(a=>a.id));
+      (localSnapshot[actId]||[]).forEach(localAtt=>{
+        if(!cloudIds.has(localAtt.id)) attachments[actId].push(localAtt);
       });
     }catch(e){}
   });
@@ -4264,6 +4271,10 @@ async function processFiles(files, actId){
           refreshAttachList(actId);
           // Save metadata to database (URL, not base64)
           saveAttachmentsFor(actId);
+          // Update sync signature immediately so poll doesn't re-fetch and strip base64
+          const _sig = getAttachmentsSignature(attachments);
+          _lastLocalAttachmentSig = _sig;
+          _syncLastAttachmentSig  = _sig;
           uploaded++;
           if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至80KB以内）`);
           continue;
@@ -4297,6 +4308,10 @@ async function processFiles(files, actId){
     attachments[actId].push(att);
     refreshAttachList(actId);
     saveAttachmentsFor(actId);
+    // Update sync signature immediately so poll doesn't re-fetch and strip base64
+    const _sigB = getAttachmentsSignature(attachments);
+    _lastLocalAttachmentSig = _sigB;
+    _syncLastAttachmentSig  = _sigB;
     uploaded++;
     if(uploaded===total) showNotif(`成功添加 ${uploaded} 个附件`);
   }
