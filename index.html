@@ -312,6 +312,16 @@ textarea{resize:vertical;min-height:64px}
 .media-paste-zone-text{font-size:12px;color:var(--text2);line-height:1.5}
 .media-paste-zone-sub{font-size:11px;color:var(--text3);margin-top:2px}
 .media-act-selector{font-size:12px;padding:4px 8px;border:1px solid var(--border2);border-radius:5px;outline:none;color:var(--text);background:var(--bg);max-width:200px}
+
+/* ── Media upload zone (drag + file + paste) ── */
+.media-upload-zone{display:flex;gap:0;margin:0 16px 12px;border:2px dashed var(--border2);border-radius:8px;background:var(--bg);overflow:hidden;transition:border-color .15s}
+.media-upload-zone.drag-over{border-color:var(--primary);background:var(--primary-light)}
+.media-upload-droparea{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 12px;cursor:default;text-align:center;min-height:90px;transition:background .15s}
+.media-upload-droparea.drag-over{background:var(--primary-light)}
+.media-upload-drop-icon{font-size:24px;margin-bottom:4px;line-height:1}
+.media-upload-drop-main{font-size:12px;color:var(--text2);font-weight:500}
+.media-upload-drop-sub{font-size:10px;color:var(--text3);margin-top:5px}
+.media-upload-side{width:150px;flex-shrink:0;border-left:1px solid var(--border);padding:12px 14px;display:flex;flex-direction:column;background:var(--bg2)}
 </style>
 </head>
 <body>
@@ -4413,18 +4423,24 @@ function renderMediaView(container){
   // Paste zone (only for editors/admins)
   const canEdit=currentUser.role!=='viewer';
   const pasteZoneHtml = canEdit ? `
-    <div class="media-paste-zone" id="media-paste-zone" title="点击此区域后 Ctrl+V 粘贴截图，图片将存入所选活动类型">
-      <div class="media-paste-zone-icon">📋</div>
-      <div style="flex:1;min-width:0">
-        <div class="media-paste-zone-text">点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动类型</div>
-        <div class="media-paste-zone-sub">系统将自动匹配该类型下最近的活动作为归属</div>
+    <div class="media-upload-zone" id="media-paste-zone">
+      <div class="media-upload-droparea" id="media-droparea">
+        <input type="file" id="media-file-input" accept="image/*" multiple style="display:none" onchange="mediaFileSelected(event)">
+        <div class="media-upload-drop-icon">🖼</div>
+        <div class="media-upload-drop-main">拖拽图片到此处，或</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;justify-content:center">
+          <button class="btn sm primary" onclick="document.getElementById('media-file-input').click()" style="font-size:11px">选择文件上传</button>
+          <span style="font-size:11px;color:var(--text3)">· 或 <strong>Ctrl+V</strong> 粘贴截图</span>
+        </div>
+        <div class="media-upload-drop-sub">支持 JPG / PNG / GIF，可多选，单文件最大 5MB</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-        <div style="font-size:11px;color:var(--text3);font-weight:500">目标活动类型</div>
-        <select class="media-act-selector" id="media-paste-type-select" onchange="mediaPasteType=this.value">
+      <div class="media-upload-side">
+        <div style="font-size:11px;color:var(--text3);font-weight:500;margin-bottom:4px">目标活动类型 <span style="color:#d93025">*</span></div>
+        <select class="media-act-selector" id="media-paste-type-select" onchange="mediaPasteType=this.value" style="width:100%;max-width:100%">
           <option value="">— 请选择类型 —</option>
           ${pasteTypeOptions}
         </select>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5">自动归属到该类型<br>下最近的活动</div>
       </div>
     </div>` : '';
 
@@ -4497,53 +4513,22 @@ function renderMediaView(container){
   if(canEdit) initMediaPasteZone();
 }
 
-// ===================== MEDIA PASTE ZONE =====================
+// ===================== MEDIA UPLOAD ZONE (drag + file + paste) =====================
 function initMediaPasteZone(){
-  const zone = document.getElementById('media-paste-zone');
-  if(!zone) return;
+  const zone     = document.getElementById('media-paste-zone');
+  const droparea = document.getElementById('media-droparea');
+  if(!zone || !droparea) return;
 
   // Restore previously selected type
   const sel = document.getElementById('media-paste-type-select');
   if(sel && mediaPasteType) sel.value = mediaPasteType;
 
-  let isActive = false;
-
-  function setActive(v){
-    isActive = v;
-    if(v){
-      zone.classList.add('pasting');
-      zone.querySelector('.media-paste-zone-text').innerHTML =
-        '<strong style="color:var(--primary)">已激活</strong> — 现在按 <strong>Ctrl+V</strong> 粘贴图片';
-    } else {
-      zone.classList.remove('pasting');
-      zone.querySelector('.media-paste-zone-text').innerHTML =
-        '点击激活后 <strong>Ctrl+V</strong> 粘贴图片，上传到指定活动类型';
-    }
-  }
-
-  zone.addEventListener('click', (e)=>{
-    if(e.target.closest('select')) return;
-    setActive(true);
-    zone.focus && zone.focus();
-  });
-
-  // Deactivate when clicking outside
-  document.addEventListener('click', function deact(e){
-    if(!zone.contains(e.target)){
-      setActive(false);
-      document.removeEventListener('click', deact);
-    }
-  });
-
-  // Global paste handler
-  const pasteHandler = async (e) => {
-    if(!isActive) return;
+  // ── Shared upload helper ──
+  async function uploadFiles(files){
     const actType = mediaPasteType;
-    if(!actType){
-      showNotif('请先选择目标活动类型', true);
-      return;
-    }
-    // Find the most recent activity of that type (within current game filter)
+    if(!actType){ showNotif('请先选择目标活动类型', true); return; }
+    const imgFiles = [...files].filter(f => f.type.startsWith('image/'));
+    if(!imgFiles.length){ showNotif('没有可上传的图片文件', true); return; }
     const candidates = activities
       .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
       .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
@@ -4552,28 +4537,72 @@ function initMediaPasteZone(){
       return;
     }
     const actId = candidates[0].id;
+    showNotif(`正在上传 ${imgFiles.length} 张图片到「${candidates[0].name}」…`);
+    for(const file of imgFiles) await processFiles([file], actId);
+    renderMain();
+  }
+
+  // ── Drag & drop on droparea ──
+  droparea.addEventListener('dragover', e=>{
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('drag-over');
+    droparea.classList.add('drag-over');
+  });
+  droparea.addEventListener('dragleave', e=>{
+    e.stopPropagation();
+    zone.classList.remove('drag-over');
+    droparea.classList.remove('drag-over');
+  });
+  droparea.addEventListener('drop', async e=>{
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('drag-over');
+    droparea.classList.remove('drag-over');
+    await uploadFiles(e.dataTransfer.files);
+  });
+
+  // ── Global paste handler (always active while media tab open) ──
+  const pasteHandler = async (e) => {
+    // Only intercept if not typing in an input/select/textarea
+    if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
     const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
     if(!items) return;
-    const imageItems = [...items].filter(it=>it.type.startsWith('image/'));
-    if(!imageItems.length){ showNotif('剪贴板中没有图片', true); return; }
+    const imageItems = [...items].filter(it => it.type.startsWith('image/'));
+    if(!imageItems.length) return;
     e.preventDefault();
-    showNotif(`正在上传图片到「${candidates[0].name}」…`);
-    for(const item of imageItems){
-      const file = item.getAsFile();
-      if(file) await processFiles([file], actId);
-    }
-    setActive(false);
-    renderMain();
+    const fileList = imageItems.map(it => it.getAsFile()).filter(Boolean);
+    await uploadFiles(fileList);
   };
-
   document.addEventListener('paste', pasteHandler);
 
-  // Cleanup when navigating away (tab switch triggers renderMain which re-creates the view)
-  const origRender = window._mediaPasteCleanup;
-  if(origRender) origRender();
+  // ── Cleanup on tab switch ──
+  const prev = window._mediaPasteCleanup;
+  if(prev) prev();
   window._mediaPasteCleanup = () => document.removeEventListener('paste', pasteHandler);
 }
-// ===================== END MEDIA PASTE ZONE =====================
+
+// Called by the file input's onchange
+async function mediaFileSelected(e){
+  const files = e.target.files;
+  if(!files || !files.length) return;
+  const actType = mediaPasteType;
+  if(!actType){ showNotif('请先选择目标活动类型', true); e.target.value=''; return; }
+  const candidates = activities
+    .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
+    .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+  if(!candidates.length){
+    showNotif(`找不到「${actType}」类型的活动，请先创建相关活动`, true);
+    e.target.value=''; return;
+  }
+  const actId = candidates[0].id;
+  const imgFiles = [...files].filter(f => f.type.startsWith('image/'));
+  if(!imgFiles.length){ showNotif('请选择图片文件', true); e.target.value=''; return; }
+  showNotif(`正在上传 ${imgFiles.length} 张图片到「${candidates[0].name}」…`);
+  for(const file of imgFiles) await processFiles([file], actId);
+  e.target.value = '';
+  renderMain();
+}
+// ===================== END MEDIA UPLOAD ZONE =====================
 
 function openLightboxFromMedia(actId, attId){
   _lbActId=actId; 
