@@ -543,6 +543,7 @@ let activeGameFilter='all', activeTypeFilter='all';
 let editingId=null;
 let mediaGame='all';
 let mediaTypeFilter='all'; // 'all' or an ACT_TYPES value
+let mediaPasteType='';       // persisted paste target type — survives re-renders
 
 // ===================== AUTH MODULE =====================
 // Supabase Auth + user_profiles table.
@@ -4320,20 +4321,34 @@ function lbDeleteCurrent(){
   const atts = attachments[actId]||[];
   const att = atts[_lbIdx];
   if(!att) return;
-  // Delete the attachment
-  deleteAttachment(actId, att.id);
+
+  // 二次确认弹窗
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'lb-del-confirm';
+  ov.innerHTML = `<div class="confirm-box">
+    <div class="confirm-title">确认删除图片</div>
+    <div class="confirm-desc" style="word-break:break-all">确定要删除「${att.name}」吗？<br>此操作不可撤销。</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="document.getElementById('lb-del-confirm').remove()">取消</button>
+      <button class="btn danger" onclick="lbDeleteConfirmed('${actId}','${att.id}')">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function lbDeleteConfirmed(actId, attId){
+  document.getElementById('lb-del-confirm')?.remove();
+  deleteAttachment(actId, attId);
   // Close lightbox if no more images, else re-render with updated index
   const remaining = attachments[actId]||[];
   if(!remaining.length){
     document.getElementById('lightbox-el')?.remove();
-    // Refresh media view if open
     if(currentTab==='media') renderMain();
     return;
   }
-  // Clamp index and re-render
   if(_lbIdx >= remaining.length) _lbIdx = remaining.length - 1;
   _renderLightbox();
-  // Refresh media grid in background
   if(currentTab==='media') setTimeout(()=>{
     const container = document.getElementById('mainArea');
     if(container) renderMediaView(container);
@@ -4405,7 +4420,7 @@ function renderMediaView(container){
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
         <div style="font-size:11px;color:var(--text3);font-weight:500">目标活动类型</div>
-        <select class="media-act-selector" id="media-paste-type-select">
+        <select class="media-act-selector" id="media-paste-type-select" onchange="mediaPasteType=this.value">
           <option value="">— 请选择类型 —</option>
           ${pasteTypeOptions}
         </select>
@@ -4486,6 +4501,10 @@ function initMediaPasteZone(){
   const zone = document.getElementById('media-paste-zone');
   if(!zone) return;
 
+  // Restore previously selected type
+  const sel = document.getElementById('media-paste-type-select');
+  if(sel && mediaPasteType) sel.value = mediaPasteType;
+
   let isActive = false;
 
   function setActive(v){
@@ -4518,8 +4537,7 @@ function initMediaPasteZone(){
   // Global paste handler
   const pasteHandler = async (e) => {
     if(!isActive) return;
-    const sel = document.getElementById('media-paste-type-select');
-    const actType = sel ? sel.value : '';
+    const actType = mediaPasteType;
     if(!actType){
       showNotif('请先选择目标活动类型', true);
       return;
