@@ -331,12 +331,6 @@ textarea{resize:vertical;min-height:64px}
 .cal-notes-text.empty-hint{color:var(--text3);font-style:italic}
 .cal-notes-edit-btn{flex-shrink:0;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid #fde68a;background:transparent;color:#92400e;cursor:pointer;margin-top:1px;white-space:nowrap}
 .cal-notes-edit-btn:hover{background:#fef9c3}
-
-/* ── Continuous calendar ── */
-.month-divider{display:flex;align-items:center;position:relative;flex-shrink:0}
-.month-divider-label{position:sticky;left:0;background:#e8e6ff;color:#3730a3;font-size:11px;font-weight:700;padding:2px 8px;border-radius:0 4px 4px 0;white-space:nowrap;z-index:7;box-shadow:2px 0 4px rgba(80,70,228,.1)}
-.month-divider-line{position:absolute;left:0;top:0;bottom:0;width:2px;background:#5046e4;opacity:.4}
-.right-header-cont{height:calc(var(--header-h) + var(--subheader-h));border-bottom:2px solid var(--border2);background:var(--bg2);position:sticky;top:0;z-index:8;display:flex}
 </style>
 </head>
 <body>
@@ -416,7 +410,7 @@ textarea{resize:vertical;min-height:64px}
 
 <script>
 // ===================== DATA =====================
-let GAMES=['第五人格','蛋仔派对'];
+let GAMES=['王者荣耀','和平精英','原神','明日方舟','崩坏：星穹铁道','第五人格','蛋仔派对'];
 let ACT_TYPES=['充值返利','版本更新','节日活动','赛事活动','福利发放','跨界联动','新服开放','限时折扣'];
 const CHANNELS=['官服','渠道服','全渠道','海外服'];
 const TARGETS=['拉新','促活','提升付费','品牌曝光','用户留存'];
@@ -424,9 +418,7 @@ const SOURCES=['官网','游戏内公告','社群','第三方平台','人工调�
 const TRIGGER_TYPES=[
   {value:'time',label:'时间触发'},
   {value:'login',label:'登录即触发'},
-  {value:'stamina',label:'耗体触发'},
-  {value:'condition',label:'条件触发'},
-  {value:'event',label:'活动触发'}
+  {value:'stamina',label:'耗体触发'}
 ];
 const ROLES={admin:'管理员',editor:'编辑者',viewer:'查看者'};
 
@@ -917,10 +909,45 @@ async function doSetupFromAuthScreen(){
 
 // ===================== END AUTH MODULE =====================
 
-let activities=[];
+let activities=[
+  {id:'WZRY-RECHARGE-20260301-001',game:'王者荣耀',type:'充值返利',name:'3月充值返利',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'2026-02-26 00:00',channels:['全渠道'],intensity:'充值100返20点券',rules:'活动期间充值累计满100点券，额外返还20点券，上限500点券',goals:['提升付费'],source:'官网',creator:'张三',createTime:'2026-03-01 09:00',modifier:'张三',modifyTime:'2026-03-01 09:00',note:''},
+  {id:'WZRY-ESPORTS-20260320-001',game:'王者荣耀',type:'赛事活动',name:'KPL春季赛应援',startTime:'2026-03-20 00:00',endTime:'2026-04-30 23:59',preheat:'2026-03-18 00:00',channels:['官服'],intensity:'应援皮肤限时上架',rules:'支持战队投票，获得应援积分，积分可兑换独家皮肤',goals:['品牌曝光','促活'],source:'官网',creator:'李四',createTime:'2026-03-14 13:00',modifier:'李四',modifyTime:'2026-03-14 13:00',note:''},
+  {id:'WZRY-EVENT-20260308-001',game:'王者荣耀',type:'节日活动',name:'女神节专属活动',startTime:'2026-03-08 00:00',endTime:'2026-03-15 23:59',preheat:'',channels:['全渠道'],intensity:'女神节皮肤+称号',rules:'完成女神节限定任务获取专属称号和限定皮肤碎片',goals:['促活','品牌曝光'],source:'游戏内公告',creator:'王五',createTime:'2026-03-05 10:00',modifier:'王五',modifyTime:'2026-03-05 10:00',note:''},
+  {id:'WZRY-UPDATE-20260319-001',game:'王者荣耀',type:'版本更新',name:'S36新赛季更新',startTime:'2026-03-19 06:00',endTime:'2026-04-15 05:59',preheat:'2026-03-15 00:00',channels:['全渠道'],intensity:'新英雄+新皮肤',rules:'新赛季开启，新英雄、新皮肤、新地图全面上线',goals:['促活','用户留存'],source:'官网',creator:'张三',createTime:'2026-03-08 11:00',modifier:'张三',modifyTime:'2026-03-08 11:00',note:''},
+  {id:'WZRY-WELFARE-20260301-001',game:'王者荣耀',type:'福利发放',name:'每日签到福利',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'最高888点券',rules:'每日登录签到，连续签到累计奖励，连续7天获得大奖',goals:['用户留存','促活'],source:'游戏内公告',creator:'李四',createTime:'2026-03-01 08:00',modifier:'李四',modifyTime:'2026-03-01 08:00',note:''},
+  {id:'WZRY-COLLAB-20260325-001',game:'王者荣耀',type:'跨界联动',name:'盗梦空间IP联动',startTime:'2026-03-25 00:00',endTime:'2026-04-10 23:59',preheat:'2026-03-22 00:00',channels:['全渠道'],intensity:'联动限定皮肤',rules:'限时联动皮肤上架，完成联动任务解锁独家奖励',goals:['品牌曝光','拉新'],source:'社群',creator:'王五',createTime:'2026-03-18 14:00',modifier:'王五',modifyTime:'2026-03-18 14:00',note:''},
+  {id:'WZRY-DISCOUNT-20260310-001',game:'王者荣耀',type:'限时折扣',name:'限时皮肤折扣',startTime:'2026-03-10 00:00',endTime:'2026-03-20 23:59',preheat:'',channels:['全渠道'],intensity:'7折起',rules:'部分经典皮肤限时7折，首充用户额外优惠',goals:['提升付费'],source:'游戏内公告',creator:'张三',createTime:'2026-03-09 09:00',modifier:'张三',modifyTime:'2026-03-09 09:00',note:''},
+  // 和平精英
+  {id:'HPJY-EVENT-20260315-001',game:'和平精英',type:'节日活动',name:'春日樱花季',startTime:'2026-03-15 10:00',endTime:'2026-04-05 23:59',preheat:'2026-03-10 00:00',channels:['官服','渠道服'],intensity:'福利价值约80元',rules:'限时皮肤上线，完成任务获取免费皮肤碎片，集碎片兑换',goals:['促活','品牌曝光'],source:'游戏内公告',creator:'李四',createTime:'2026-03-10 14:30',modifier:'李四',modifyTime:'2026-03-12 10:00',note:'同步覆盖海外版'},
+  {id:'HPJY-RECHARGE-20260301-001',game:'和平精英',type:'充值返利',name:'3月UC充值返利',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'充值200返30UC',rules:'充值满200UC，额外返30UC，上限不限',goals:['提升付费'],source:'官网',creator:'张三',createTime:'2026-03-01 10:00',modifier:'张三',modifyTime:'2026-03-01 10:00',note:''},
+  {id:'HPJY-UPDATE-20260312-001',game:'和平精英',type:'版本更新',name:'2.9版本更新',startTime:'2026-03-12 06:00',endTime:'2026-04-09 05:59',preheat:'2026-03-10 00:00',channels:['全渠道'],intensity:'新地图+载具升级',rules:'新赛季新地图，载具系统全面升级，新武器上线',goals:['促活','用户留存'],source:'官网',creator:'王五',createTime:'2026-03-07 09:00',modifier:'王五',modifyTime:'2026-03-07 09:00',note:''},
+  {id:'HPJY-WELFARE-20260301-001',game:'和平精英',type:'福利发放',name:'每日登录礼包',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'最高金券500',rules:'连续登录7天获得完整礼包，包含金券和道具箱',goals:['用户留存'],source:'游戏内公告',creator:'李四',createTime:'2026-03-01 08:30',modifier:'李四',modifyTime:'2026-03-01 08:30',note:''},
+  {id:'HPJY-ESPORTS-20260315-001',game:'和平精英',type:'赛事活动',name:'PEL春季赛应援',startTime:'2026-03-15 00:00',endTime:'2026-04-20 23:59',preheat:'2026-03-12 00:00',channels:['官服'],intensity:'战队专属皮肤',rules:'支持PEL战队，完成应援任务获取战队专属物品',goals:['品牌曝光','促活'],source:'官网',creator:'张三',createTime:'2026-03-10 09:00',modifier:'张三',modifyTime:'2026-03-10 09:00',note:''},
+  // 原神
+  {id:'YS-UPDATE-20260319-001',game:'原神',type:'版本更新',name:'4.5版本「翠绿之野」',startTime:'2026-03-19 06:00',endTime:'2026-04-23 17:59',preheat:'2026-03-12 00:00',channels:['全渠道'],intensity:'60次免费祈愿',rules:'新版本上线赠送免费祈愿，完成新剧情任务获得额外奖励，新角色限定祈愿开启',goals:['促活','用户留存'],source:'官网',creator:'张三',createTime:'2026-03-08 11:00',modifier:'王五',modifyTime:'2026-03-15 16:45',note:''},
+  {id:'YS-EVENT-20260308-001',game:'原神',type:'节日活动',name:'女神节限定任务',startTime:'2026-03-08 00:00',endTime:'2026-03-18 23:59',preheat:'',channels:['全渠道'],intensity:'专属称号+道具',rules:'完成限时女神节任务链，获取专属道具和原石',goals:['促活'],source:'游戏内公告',creator:'李四',createTime:'2026-03-05 11:00',modifier:'李四',modifyTime:'2026-03-05 11:00',note:''},
+  {id:'YS-RECHARGE-20260319-001',game:'原神',type:'充值返利',name:'4.5版月卡礼包',startTime:'2026-03-19 00:00',endTime:'2026-04-23 23:59',preheat:'',channels:['全渠道'],intensity:'首充双倍原石',rules:'版本期间购买月卡享首充双倍，每日领取原石，购买通行证额外赠送',goals:['提升付费','用户留存'],source:'官网',creator:'王五',createTime:'2026-03-18 09:00',modifier:'王五',modifyTime:'2026-03-18 09:00',note:''},
+  {id:'YS-WELFARE-20260301-001',game:'原神',type:'福利发放',name:'探索任务日常福利',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'最高800原石',rules:'每日完成探索任务，累积领取原石和各类材料',goals:['促活','用户留存'],source:'游戏内公告',creator:'张三',createTime:'2026-03-01 08:00',modifier:'张三',modifyTime:'2026-03-01 08:00',note:''},
+  // 明日方舟
+  {id:'MRF-WELFARE-20260428-001',game:'明日方舟',type:'福利发放',name:'周年庆登录福利',startTime:'2026-04-28 00:00',endTime:'2026-05-07 23:59',preheat:'',channels:['全渠道'],intensity:'6星干员自选券×1',rules:'连续登录7天即可全部领取，每日签到额外获得合成玉',goals:['用户留存','促活'],source:'社群',creator:'王五',createTime:'2026-03-16 09:15',modifier:'王五',modifyTime:'2026-03-16 09:15',note:''},
+  {id:'MRF-UPDATE-20260326-001',game:'明日方舟',type:'版本更新',name:'「锻骨成歌」新章节',startTime:'2026-03-26 10:00',endTime:'2026-04-29 03:59',preheat:'2026-03-20 00:00',channels:['全渠道'],intensity:'新6星干员上线',rules:'新章节主线剧情开放，限时卡池开启，新干员同步上线',goals:['促活','提升付费'],source:'官网',creator:'李四',createTime:'2026-03-15 14:00',modifier:'李四',modifyTime:'2026-03-15 14:00',note:''},
+  {id:'MRF-RECHARGE-20260301-001',game:'明日方舟',type:'充值返利',name:'合成玉充值返利',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'额外赠送10%合成玉',rules:'活动期间充值任意金额额外赠送10%合成玉，不限次数',goals:['提升付费'],source:'官网',creator:'张三',createTime:'2026-03-01 09:30',modifier:'张三',modifyTime:'2026-03-01 09:30',note:''},
+  // 崩坏：星穹铁道
+  {id:'BHXQTD-UPDATE-20260326-001',game:'崩坏：星穹铁道',type:'版本更新',name:'3.1版本更新',startTime:'2026-03-26 10:00',endTime:'2026-04-30 03:59',preheat:'2026-03-20 00:00',channels:['全渠道'],intensity:'新角色+新世界',rules:'新角色上线，新区域开放，剧情任务更新，限定祈愿开启',goals:['促活','用户留存'],source:'官网',creator:'王五',createTime:'2026-03-15 10:00',modifier:'王五',modifyTime:'2026-03-15 10:00',note:''},
+  {id:'BHXQTD-RECHARGE-20260301-001',game:'崩坏：星穹铁道',type:'充值返利',name:'3月星琼月卡返利',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'月卡额外赠星琼',rules:'购买月卡享额外星琼奖励，首购双倍，每日领取稳定收益',goals:['提升付费','用户留存'],source:'官网',creator:'李四',createTime:'2026-03-01 09:00',modifier:'李四',modifyTime:'2026-03-01 09:00',note:''},
+  {id:'BHXQTD-EVENT-20260308-001',game:'崩坏：星穹铁道',type:'节日活动',name:'女神节限定活动',startTime:'2026-03-08 00:00',endTime:'2026-03-20 23:59',preheat:'',channels:['全渠道'],intensity:'限定皮肤+头像',rules:'完成女神节限定任务获取皮肤碎片，集齐兑换限定皮肤',goals:['促活','品牌曝光'],source:'游戏内公告',creator:'王五',createTime:'2026-03-05 09:00',modifier:'王五',modifyTime:'2026-03-05 09:00',note:''},
+  {id:'BHXQTD-WELFARE-20260301-001',game:'崩坏：星穹铁道',type:'福利发放',name:'每日实训任务奖励',startTime:'2026-03-01 00:00',endTime:'2026-03-31 23:59',preheat:'',channels:['全渠道'],intensity:'每日最高80星琼',rules:'完成每日实训任务获得星琼和材料，月度累计可达2400星琼',goals:['促活','用户留存'],source:'游戏内公告',creator:'张三',createTime:'2026-03-01 08:00',modifier:'张三',modifyTime:'2026-03-01 08:00',note:''},
+];
+
 // members are now managed via Supabase user_profiles table
 
-let opLogs=[];
+let opLogs=[
+  {time:'2026-03-17 15:30',user:'王五',action:'修改了《原神》4.5版本活动的结束时间'},
+  {time:'2026-03-16 09:15',user:'王五',action:'新增了《明日方舟》周年庆登录福利'},
+  {time:'2026-03-15 16:45',user:'王五',action:'修改了《原神》4.5版本更新活动'},
+  {time:'2026-03-14 13:00',user:'李四',action:'新增了《王者荣耀》KPL春季赛应援活动'},
+  {time:'2026-03-12 10:00',user:'李四',action:'修改了《和平精英》春日樱花季活动备注'},
+];
 
 // attachments: { [activityId]: [ {id, name, type, size, data, addedBy, addedAt} ] }
 // type: 'image' | 'video_url' | 'video'
@@ -2119,232 +2146,207 @@ function saveCalNotes(game, text){
 // ===================== END CALENDAR GAME NOTES =====================
 
 // ===================== GANTT CALENDAR =====================
-// Continuous multi-month calendar — shows MONTHS_SHOWN months, horizontally scrollable
-const MONTHS_SHOWN = 7; // months before today(1) + current(1) + after(5)
-
 function renderCalendarView(container){
-  const gameActs = activities.filter(a => a.game === calGame);
-  const cats      = GAME_CATS[calGame] || [];
-  const catColors = GAME_CAT_COLORS[calGame] || [];
-  const catTexts  = GAME_CAT_TEXT[calGame] || [];
+  const year=calYear, month=calMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const gameActs=activities.filter(a=>a.game===calGame);
+  const cats=GAME_CATS[calGame]||[];
+  const catColors=GAME_CAT_COLORS[calGame]||[];
+  const catTexts=GAME_CAT_TEXT[calGame]||[];
 
-  // Dynamic range: from earliest activity to latest activity for this game
-  // Fall back to today±2 months if no activities
-  let rangeStartDate, rangeEndDate2;
-  if(gameActs.length > 0){
-    const starts = gameActs.map(a=>new Date(a.startTime));
-    const ends   = gameActs.map(a=>new Date(a.endTime));
-    const minDate = new Date(Math.min(...starts));
-    const maxDate = new Date(Math.max(...ends));
-    rangeStartDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-    rangeEndDate2  = new Date(maxDate.getFullYear(), maxDate.getMonth()+1, 0);
-  } else {
-    rangeStartDate = new Date(TODAY.getFullYear(), TODAY.getMonth()-1, 1);
-    rangeEndDate2  = new Date(TODAY.getFullYear(), TODAY.getMonth()+2, 0);
+  // build days array
+  const days=[];
+  for(let d=1;d<=daysInMonth;d++){
+    const dt=new Date(year,month,d);
+    const dow=dt.getDay();
+    days.push({d,dow,isWe:dow===0||dow===6,isToday:year===TODAY.getFullYear()&&month===TODAY.getMonth()&&d===TODAY.getDate()});
   }
-  // Ensure at least 3 months
-  const minEnd = new Date(rangeStartDate.getFullYear(), rangeStartDate.getMonth()+2, 0);
-  if(rangeEndDate2 < minEnd) rangeEndDate2 = minEnd;
+  const totalW=days.length*50; // var(--day-w)=50px
 
-  const rangeStart = rangeStartDate;
-  // Calculate total months between rangeStart and rangeEndDate2
-  const totalMonths = (rangeEndDate2.getFullYear()-rangeStart.getFullYear())*12
-                    + (rangeEndDate2.getMonth()-rangeStart.getMonth()) + 1;
-
-  // Build all months data
-  const months = [];
-  for(let mi = 0; mi < totalMonths; mi++){
-    const d = new Date(rangeStart.getFullYear(), rangeStart.getMonth() + mi, 1);
-    const yr = d.getFullYear(), mo = d.getMonth();
-    const dim = new Date(yr, mo+1, 0).getDate();
-    const days = [];
-    for(let day = 1; day <= dim; day++){
-      const dt = new Date(yr, mo, day);
-      const dow = dt.getDay();
-      days.push({d:day, dow, isWe:dow===0||dow===6,
-        isToday: yr===TODAY.getFullYear()&&mo===TODAY.getMonth()&&day===TODAY.getDate(),
-        year:yr, month:mo});
-    }
-    months.push({yr, mo, dim, days});
+  // week labels for header
+  function buildWeekBlocks(){
+    const blocks=[];let cur=null;
+    days.forEach(day=>{
+      const weekNum=getWeekNum(new Date(year,month,day.d));
+      if(!cur||cur.wn!==weekNum){
+        if(cur)blocks.push(cur);
+        cur={wn:weekNum,start:day.d,count:1};
+      } else {cur.count++;}
+    });
+    if(cur)blocks.push(cur);
+    return blocks;
   }
-
-  // All days flat
-  const allDays = months.flatMap(m => m.days);
-  const totalW  = allDays.length * 50;
-
-  // Week number helper
   function getWeekNum(d){
-    const jan1 = new Date(d.getFullYear(),0,1);
-    return Math.ceil(((d - jan1)/86400000 + jan1.getDay() + 1)/7);
+    const jan1=new Date(d.getFullYear(),0,1);
+    return Math.ceil(((d-jan1)/86400000+jan1.getDay()+1)/7);
+  }
+  const weekBlocks=buildWeekBlocks();
+
+  // compute bar left/width in px given day column positions
+  function barGeom(startStr,endStr){
+    const s=new Date(startStr), e=new Date(endStr);
+    const mStart=new Date(year,month,1), mEnd=new Date(year,month,daysInMonth,23,59,59);
+    if(s>mEnd||e<mStart)return null;
+    const sd=Math.max(1,(s<mStart?1:s.getDate()));
+    const ed=Math.min(daysInMonth,(e>mEnd?daysInMonth:e.getDate()));
+    const left=(sd-1)*50;
+    const width=(ed-sd+1)*50-2;
+    return{left,width};
   }
 
-  // Build overlap/pack helpers that work across the full range
-  function actsOverlapRange(a, b){
-    const as=new Date(a.startTime),ae=new Date(a.endTime);
-    const bs=new Date(b.startTime),be=new Date(b.endTime);
-    return as<=be && bs<=ae;
+  // ── Row splitting: detect overlapping bars and assign to sub-rows ──
+  // Two activities "overlap in the calendar" if their visible date ranges intersect this month.
+  function actsOverlap(a, b){
+    const mStart=new Date(year,month,1), mEnd=new Date(year,month,daysInMonth,23,59,59);
+    const as=new Date(a.startTime), ae=new Date(a.endTime);
+    const bs=new Date(b.startTime), be=new Date(b.endTime);
+    const visAs=as<mStart?mStart:as, visAe=ae>mEnd?mEnd:ae;
+    const visBs=bs<mStart?mStart:bs, visBe=be>mEnd?mEnd:be;
+    if(visAs>mEnd||visAe<mStart||visBs>mEnd||visBe<mStart)return false;
+    return visAs<=visBe && visBs<=visAe;
   }
+
+  // Pack acts into non-overlapping sub-rows using greedy interval packing
   function packIntoSubRows(acts){
-    const subRows=[];
+    const subRows=[]; // each subRow is array of acts
     acts.forEach(act=>{
+      // find first subRow where act doesn't overlap any existing act
       let placed=false;
       for(const sr of subRows){
-        if(!sr.some(e=>actsOverlapRange(act,e))){sr.push(act);placed=true;break;}
+        if(!sr.some(existing=>actsOverlap(act,existing))){
+          sr.push(act);placed=true;break;
+        }
       }
       if(!placed) subRows.push([act]);
     });
     return subRows;
   }
 
-  // Range bounds for bar geometry
-  const rangeStartMs = rangeStart.getTime();
-  const rangeEndDate = new Date(rangeStart.getFullYear(), rangeStart.getMonth() + totalMonths, 0, 23, 59, 59);
-
-  // Bar geometry: pixel offset from left edge of entire scrollable area
-  function barGeom(startStr, endStr){
-    const s = new Date(startStr), e = new Date(endStr);
-    if(s > rangeEndDate || e < rangeStart) return null;
-    const clampS = s < rangeStart ? rangeStart : s;
-    const clampE = e > rangeEndDate ? rangeEndDate : e;
-    // Find day index in allDays
-    function dayIdx(dt){
-      const yr = dt.getFullYear(), mo = dt.getMonth(), day = dt.getDate();
-      let idx = 0;
-      for(const m of months){
-        if(m.yr === yr && m.mo === mo){ idx += day - 1; break; }
-        idx += m.dim;
-      }
-      return idx;
-    }
-    const sIdx = dayIdx(clampS);
-    const eIdx = dayIdx(clampE);
-    return { left: sIdx * 50, width: (eIdx - sIdx + 1) * 50 - 2 };
-  }
-
-  // Today line position
-  function todayLineLeft(){
-    let offset = 0;
-    for(const m of months){
-      if(m.yr===TODAY.getFullYear()&&m.mo===TODAY.getMonth()){
-        return offset + (TODAY.getDate()-1)*50 + 25;
-      }
-      offset += m.dim * 50;
-    }
-    return -1;
-  }
-  const todayPos = todayLineLeft();
-
-  // Build row items (across full range, not per-month)
-  const rowItems = [];
-  cats.forEach((catDef, ci)=>{
-    rowItems.push({type:'cat', label:catDef.cat, ci});
+  // build flat row list with cat separators — each type row may expand into multiple sub-rows
+  const rowItems=[];
+  cats.forEach((catDef,ci)=>{
+    rowItems.push({type:'cat',label:catDef.cat,ci});
     catDef.rows.forEach(rowDef=>{
-      const rowActs = gameActs.filter(a => rowDef.types.includes(a.type));
-      const visActs = rowActs.filter(a=>{
+      const rowActs=gameActs.filter(a=>rowDef.types.includes(a.type));
+      // filter to acts visible this month
+      const visActs=rowActs.filter(a=>{
         const s=new Date(a.startTime),e=new Date(a.endTime);
-        return s<=rangeEndDate && e>=rangeStart;
+        return s<=new Date(year,month,daysInMonth,23,59,59)&&e>=new Date(year,month,1);
       });
-      const subRows = visActs.length > 0 ? packIntoSubRows(visActs) : [];
+      const subRows=visActs.length>0?packIntoSubRows(visActs):[];
       if(subRows.length===0){
+        // empty row — show one blank row
         rowItems.push({type:'row',label:rowDef.label,acts:[],types:rowDef.types,ci,subRowIdx:0,totalSubRows:1,allActs:rowActs});
-      }else{
+      } else {
         subRows.forEach((srActs,sri)=>{
-          rowItems.push({type:'row',label:sri===0?rowDef.label:'',acts:srActs,types:rowDef.types,ci,subRowIdx:sri,totalSubRows:subRows.length,allActs:rowActs});
+          rowItems.push({
+            type:'row',
+            label:sri===0?rowDef.label:'',  // label only on first sub-row
+            acts:srActs,
+            types:rowDef.types,
+            ci,
+            subRowIdx:sri,
+            totalSubRows:subRows.length,
+            allActs:rowActs
+          });
         });
       }
     });
   });
 
-  // Game tabs
-  const gameTabs = GAMES.map(g=>`<div class="game-tab ${g===calGame?'active':''}" onclick="switchCalGame('${g}')">${g}</div>`).join('');
+  // render game tabs
+  const gameTabs=GAMES.map(g=>`<div class="game-tab ${g===calGame?'active':''}" onclick="switchCalGame('${g}')">${g}</div>`).join('');
 
-  // ── Left column ──
-  let leftRows = '';
+  // Month names
+  const mNames=['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+
+  // Left column HTML
+  let leftTop=`<div class="left-top">活动类型</div>`;
+  let leftRows='';
   rowItems.forEach(item=>{
     if(item.type==='cat'){
       const bg=catColors[item.ci%catColors.length]||'#f3f4f6';
       const tc=catTexts[item.ci%catTexts.length]||'#374151';
       leftRows+=`<div class="left-cat-header" style="background:${bg};color:${tc}">${item.label}</div>`;
-    }else{
+    } else {
+      // For sub-rows after the first, show a continuation indicator
       if(item.subRowIdx===0){
-        const badge=item.totalSubRows>1?`<span style="margin-left:4px;font-size:9px;background:var(--bg3);color:var(--text3);padding:1px 5px;border-radius:8px">${item.totalSubRows}</span>`:'';
-        leftRows+=`<div class="left-row cal-row-drag" draggable="true" data-ci="${item.ci}" data-row-label="${item.label}" data-types="${(item.types||[]).join(',')}" title="拖拽可调整行顺序 | ${item.label}" style="cursor:grab"><span style="font-size:10px;color:var(--text3);margin-right:4px;user-select:none">⠿</span>${item.label}${badge}</div>`;
-      }else{
+        const badge=item.totalSubRows>1
+          ?`<span style="margin-left:4px;font-size:9px;background:var(--bg3);color:var(--text3);padding:1px 5px;border-radius:8px">${item.totalSubRows}</span>`
+          :'';
+        leftRows+=`<div class="left-row cal-row-drag" draggable="true"
+          data-ci="${item.ci}" data-row-label="${item.label}" data-types="${(item.types||[]).join(',')}"
+          title="拖拽可调整行顺序 | ${item.label}"
+          style="cursor:grab">
+          <span style="font-size:10px;color:var(--text3);margin-right:4px;user-select:none">⠿</span>${item.label}${badge}</div>`;
+      } else {
         leftRows+=`<div class="left-row" style="opacity:.55;font-size:10px;padding-left:18px">↳ 续行 ${item.subRowIdx+1}</div>`;
       }
     }
   });
 
-  // ── Right header: week row + day row across all months ──
-  const mNames=['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
-  const DOW_EN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-  let weekHeaderHtml = '';
-  let dayHeaderHtml  = '';
-  // Build week blocks across all months
-  const weekBlocks=[]; let curWB=null;
-  allDays.forEach(day=>{
-    const wn = getWeekNum(new Date(day.year,day.month,day.d));
-    const key = `${day.year}-W${wn}`;
-    if(!curWB||curWB.key!==key){
-      if(curWB) weekBlocks.push(curWB);
-      curWB={key,wn,count:1};
-    }else{curWB.count++;}
-  });
-  if(curWB) weekBlocks.push(curWB);
+  // Right column header HTML
+  let weekHeaderHtml='';
   weekBlocks.forEach(wb=>{
     weekHeaderHtml+=`<div class="week-block" style="width:${wb.count*50}px">W${wb.wn}</div>`;
   });
-  // Month label overlays inside week header (absolute positioned month labels)
-  let monthOffsets=''; let dayOffset=0;
-  months.forEach(m=>{
-    monthOffsets+=`<div style="position:absolute;left:${dayOffset}px;top:0;height:100%;display:flex;align-items:center;padding:0 6px;font-size:10px;font-weight:700;color:#3730a3;pointer-events:none;white-space:nowrap">${m.yr}年${mNames[m.mo]}</div>`;
-    dayOffset+=m.dim*50;
-  });
-  allDays.forEach(day=>{
+  const DOW_EN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let dayHeaderHtml='';
+  days.forEach(day=>{
     const cls=(day.isWe?'weekend':'')+(day.isToday?' today':'');
-    dayHeaderHtml+=`<div class="day-hcell ${cls}" style="flex-direction:column;gap:1px"><span>${day.d}</span><span style="font-size:9px;opacity:.7">${DOW_EN[day.dow]}</span></div>`;
+    const dowStr=DOW_EN[day.dow];
+    dayHeaderHtml+=`<div class="day-hcell ${cls}" style="flex-direction:column;gap:1px">
+      <span>${day.d}</span>
+      <span style="font-size:9px;opacity:.7">${dowStr}</span>
+    </div>`;
   });
 
-  // ── Right body ──
+  // Right body rows HTML
   let rightBodyHtml='';
+  // Today line position
+  const todayPos=TODAY.getFullYear()===year&&TODAY.getMonth()===month?(TODAY.getDate()-1)*50+25:-1;
+
   rowItems.forEach(item=>{
     if(item.type==='cat'){
       const bg=catColors[item.ci%catColors.length]||'#f3f4f6';
       let dayCells='';
-      allDays.forEach(day=>{ dayCells+=`<div class="day-bg" style="background:${bg};opacity:.5"></div>`; });
+      days.forEach(day=>{
+        dayCells+=`<div class="day-bg" style="background:${bg};opacity:.5"></div>`;
+      });
       rightBodyHtml+=`<div class="right-cat-header" style="background:${bg};opacity:.7">${dayCells}</div>`;
-    }else{
+    } else {
       let dayCells='';
-      allDays.forEach(day=>{
+      days.forEach(day=>{
         const cls=(day.isWe?' weekend':'')+(day.isToday?' today':'');
         dayCells+=`<div class="day-bg${cls}"></div>`;
       });
+      // bars for this row
       let bars='';
       item.acts.forEach(act=>{
+        // main bar
         const geom=barGeom(act.startTime,act.endTime);
         if(geom){
-          const col=TYPE_COLORS[act.type]||{bg:'#e5e7eb',text:'#374151',border:'#9ca3af'};
+          const c=TYPE_COLORS[act.type]||{bg:'#e5e7eb',text:'#374151',border:'#9ca3af'};
+          const escaped=act.name.replace(/'/g,"\\'");
           const starMark=act.important?'⭐ ':'';
-          const importantStyle=act.important?'box-shadow:0 0 0 2px #f59e0b;font-weight:600;':'';
-          bars+=`<div class="act-bar" style="left:${geom.left}px;width:${geom.width}px;background:${col.bg};color:${col.text};border:1px solid ${col.border};${importantStyle}" onmouseenter="showTip(event,'${getActivityRef(act)}')" onmouseleave="hideTip()" onclick="showDetail('${getActivityRef(act)}')">${starMark}${act.name}</div>`;
+          const importantStyle=act.important?`box-shadow:0 0 0 2px #f59e0b;font-weight:600;`:'';
+          bars+=`<div class="act-bar" style="left:${geom.left}px;width:${geom.width}px;background:${c.bg};color:${c.text};border:1px solid ${c.border};${importantStyle}" 
+            onmouseenter="showTip(event,'${getActivityRef(act)}')" onmouseleave="hideTip()" onclick="showDetail('${getActivityRef(act)}')">${starMark}${act.name}</div>`;
         }
+        // preheat bar
         if(act.preheat){
           const pGeom=barGeom(act.preheat,act.startTime);
           if(pGeom&&pGeom.width>4){
-            const col=TYPE_COLORS[act.type]||{border:'#9ca3af',text:'#6b7280'};
-            bars+=`<div class="preheat-bar" style="left:${pGeom.left}px;width:${pGeom.width-2}px;border-color:${col.border};color:${col.text}" onmouseenter="showTip(event,'${getActivityRef(act)}','preheat')" onmouseleave="hideTip()">预热</div>`;
+            const c=TYPE_COLORS[act.type]||{border:'#9ca3af',text:'#6b7280'};
+            bars+=`<div class="preheat-bar" style="left:${pGeom.left}px;width:${pGeom.width-2}px;border-color:${c.border};color:${c.text}" 
+              onmouseenter="showTip(event,'${getActivityRef(act)}','preheat')" onmouseleave="hideTip()">预热</div>`;
           }
         }
       });
-      // Month dividers
-      let mDivs=''; let mOff=0;
-      months.forEach((m,mi)=>{
-        if(mi>0) mDivs+=`<div style="position:absolute;left:${mOff}px;top:0;bottom:0;width:2px;background:#5046e4;opacity:.15;pointer-events:none"></div>`;
-        mOff+=m.dim*50;
-      });
-      rightBodyHtml+=`<div class="right-row cal-right-row" data-ci="${item.ci}" data-row-label="${item.label}" data-sub="${item.subRowIdx}">
-        ${dayCells}${bars}${mDivs}
+      rightBodyHtml+=`<div class="right-row cal-right-row"
+        data-ci="${item.ci}" data-row-label="${item.label}" data-sub="${item.subRowIdx}">
+        ${dayCells}
+        ${bars}
         ${todayPos>=0?`<div class="today-line" style="left:${todayPos}px"></div>`:''}
       </div>`;
     }
@@ -2353,28 +2355,31 @@ function renderCalendarView(container){
   container.innerHTML=`
   <div class="cal-view">
     <div class="cal-toolbar">
-      <div class="cal-title">${calGame}</div>
+      <div class="cal-title">${year}年 ${mNames[month]} — ${calGame}</div>
       <div class="game-switcher">${gameTabs}</div>
       <div class="month-nav">
-        <button class="btn sm" onclick="scrollCalToToday()" style="margin-left:4px">今天</button>
+        <button class="mnav-btn" onclick="changeMonth(-1)">‹</button>
+        <span class="mnav-label">${year}/${month+1}</span>
+        <button class="mnav-btn" onclick="changeMonth(1)">›</button>
+        <button class="btn sm" onclick="goToToday()" style="margin-left:4px">今天</button>
         <button class="btn sm" onclick="showModal('add')" style="margin-left:4px">+ 新增</button>
-        <button class="btn sm" onclick="exportCalendarExcelAll()" style="margin-left:4px">📥 导出Excel</button>
+        <button class="btn sm" onclick="exportCalendarExcel()" style="margin-left:4px">📥 导出Excel</button>
       </div>
     </div>
     <div class="cal-notes-bar ${GAME_NOTES[calGame]?'':'empty'}" id="calNotesBar">
-      <span class="cal-notes-icon">📌</span>
+      <span class="cal-notes-icon">${GAME_NOTES[calGame]?'📌':'📌'}</span>
       <span class="cal-notes-text ${GAME_NOTES[calGame]?'':'empty-hint'}" id="calNotesText">${GAME_NOTES[calGame]||'暂无备注说明，点击右侧编辑按钮添加…'}</span>
       ${currentUser.role!=='viewer'?`<button class="cal-notes-edit-btn" onclick="showCalNotesEditor('${calGame}')">✏ 编辑备注</button>`:''}
     </div>
     <div class="gantt-container" id="ganttContainer">
       <div class="gantt-left" id="ganttLeft">
-        <div class="left-top">活动类型</div>
+        ${leftTop}
         <div class="left-rows" id="leftRows">${leftRows}</div>
       </div>
       <div class="gantt-right" id="ganttRight">
-        <div class="gantt-right-inner" style="width:${totalW}px;position:relative">
-          <div class="right-header" style="position:sticky;top:0;z-index:8">
-            <div class="week-header-row" style="position:relative">${weekHeaderHtml}${monthOffsets}</div>
+        <div class="gantt-right-inner" style="width:${totalW}px">
+          <div class="right-header">
+            <div class="week-header-row">${weekHeaderHtml}</div>
             <div class="day-header-row">${dayHeaderHtml}</div>
           </div>
           <div id="rightBody">${rightBodyHtml}</div>
@@ -2383,50 +2388,17 @@ function renderCalendarView(container){
     </div>
   </div>`;
 
-  // Sync vertical scroll
+  // sync scroll between left and right
   const gr=document.getElementById('ganttRight');
   const lr=document.getElementById('leftRows');
-  if(gr&&lr){ gr.addEventListener('scroll',()=>{lr.scrollTop=gr.scrollTop;}); }
-
-  // Scroll to today on initial render
-  setTimeout(()=>{
-    const gr2=document.getElementById('ganttRight');
-    if(gr2) gr2.scrollLeft=Math.max(0, todayPos - gr2.clientWidth/2);
-  }, 0);
-
-  setTimeout(()=>initCalRowDrag(), 0);
+  if(gr&&lr){
+    gr.addEventListener('scroll',()=>{lr.scrollTop=gr.scrollTop});
+  }
+  // Init row drag
+  setTimeout(()=>initCalRowDrag(),0);
 }
 
-function scrollCalToToday(){
-  const gr=document.getElementById('ganttRight');
-  if(!gr) return;
-  // recalculate todayPos
-  // Use same dynamic range logic
-  const _gameActs=activities.filter(a=>a.game===calGame);
-  let _rangeStart;
-  if(_gameActs.length>0){
-    const minD=new Date(Math.min(..._gameActs.map(a=>new Date(a.startTime))));
-    _rangeStart=new Date(minD.getFullYear(),minD.getMonth(),1);
-  } else {
-    _rangeStart=new Date(TODAY.getFullYear(),TODAY.getMonth()-1,1);
-  }
-  const rangeStart=_rangeStart;
-  const maxMonths=36; // safety cap
-  let offset=0;
-  for(let mi=0;mi<maxMonths;mi++){
-    const d=new Date(rangeStart.getFullYear(),rangeStart.getMonth()+mi,1);
-    if(d.getFullYear()===TODAY.getFullYear()&&d.getMonth()===TODAY.getMonth()){
-      offset+=(TODAY.getDate()-1)*50+25;
-      break;
-    }
-    offset+=new Date(d.getFullYear(),d.getMonth()+1,0).getDate()*50;
-    if(d>TODAY) break; // safety
-  }
-  gr.scrollTo({left:Math.max(0,offset-gr.clientWidth/2),behavior:'smooth'});
-}
-
-function switchCalGame(g){calGame=g;persistUiState();renderMain();}
-// changeMonth no longer used in continuous mode but kept for compatibility
+function switchCalGame(g){calGame=g;persistUiState();renderMain()}
 function changeMonth(d){
   calMonth+=d;
   if(calMonth<0){calMonth=11;calYear--}
@@ -2439,8 +2411,7 @@ function goToToday(){
   calYear = TODAY.getFullYear();
   calMonth = TODAY.getMonth();
   persistUiState();
-  if(currentTab==='calendar') scrollCalToToday();
-  else renderMain();
+  renderMain();
 }
 
 
@@ -2514,166 +2485,175 @@ function reorderCalRow(src, targetCi, targetLabel){
 // ===================== END CALENDAR ROW DRAG =====================
 
 // ===================== EXPORT CALENDAR TO EXCEL =====================
-function exportCalendarExcel(){ exportCalendarExcelAll(); } // alias
-
-function exportCalendarExcelAll(){
-  // Export all visible months for current game as one Excel sheet
+function exportCalendarExcel(){
+  const year=calYear, month=calMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
   const mNames=['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+  const gameActs=activities.filter(a=>a.game===calGame);
+  const cats=GAME_CATS[calGame]||[];
+  const catBgColors=(GAME_CAT_COLORS[calGame]||[]);
+  const catTxColors=(GAME_CAT_TEXT[calGame]||[]);
   const DOW_ZH=['日','一','二','三','四','五','六'];
-  const game = calGame;
-  const gameActs = activities.filter(a=>a.game===game);
-  const cats = GAME_CATS[game]||[];
-  const catBgColors = GAME_CAT_COLORS[game]||[];
-  const catTxColors = GAME_CAT_TEXT[game]||[];
 
-  // Same dynamic range as calendar
-  let _rs, _re;
-  if(gameActs.length > 0){
-    const starts=gameActs.map(a=>new Date(a.startTime));
-    const ends=gameActs.map(a=>new Date(a.endTime));
-    _rs=new Date(new Date(Math.min(...starts)).getFullYear(),new Date(Math.min(...starts)).getMonth(),1);
-    _re=new Date(new Date(Math.max(...ends)).getFullYear(),new Date(Math.max(...ends)).getMonth()+1,0);
-  } else {
-    _rs=new Date(TODAY.getFullYear(),TODAY.getMonth()-1,1);
-    _re=new Date(TODAY.getFullYear(),TODAY.getMonth()+2,0);
-  }
-  const minEnd2=new Date(_rs.getFullYear(),_rs.getMonth()+2,0);
-  if(_re<minEnd2)_re=minEnd2;
-  const rangeStart=_rs;
-  const totalMonths=((_re.getFullYear()-_rs.getFullYear())*12+(_re.getMonth()-_rs.getMonth()))+1;
-  const months=[];
-  for(let mi=0;mi<totalMonths;mi++){
-    const d=new Date(rangeStart.getFullYear(),rangeStart.getMonth()+mi,1);
-    const yr=d.getFullYear(),mo=d.getMonth();
-    const dim=new Date(yr,mo+1,0).getDate();
-    const days=[];
-    for(let day=1;day<=dim;day++){
-      const dt=new Date(yr,mo,day);
-      const dow=dt.getDay();
-      days.push({d:day,dow,isWe:dow===0||dow===6,isToday:yr===TODAY.getFullYear()&&mo===TODAY.getMonth()&&day===TODAY.getDate(),year:yr,month:mo});
-    }
-    months.push({yr,mo,dim,days});
-  }
-  const allDays=months.flatMap(m=>m.days);
-  const rangeEndDate=new Date(rangeStart.getFullYear(),rangeStart.getMonth()+totalMonths,0,23,59,59);
-
-  function lighten(hex,amt=0.55){
-    hex=hex.replace('#','');if(hex.length===3)hex=hex.split('').map(c=>c+c).join('');
-    const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);
-    return '#'+[r,g,b].map(v=>Math.round(v+(255-v)*amt).toString(16).padStart(2,'0')).join('');
+  // Build days array
+  const days=[];
+  for(let d=1;d<=daysInMonth;d++){
+    const dt=new Date(year,month,d);
+    const dow=dt.getDay();
+    days.push({d,dow,isWe:dow===0||dow===6,isToday:year===TODAY.getFullYear()&&month===TODAY.getMonth()&&d===TODAY.getDate()});
   }
 
-  function actsOverlapRange(a,b){
-    return new Date(a.startTime)<=new Date(b.endTime)&&new Date(b.startTime)<=new Date(a.endTime);
+  // Overlap detection and sub-row packing (same as calendar render)
+  function actsOverlap(a,b){
+    const mS=new Date(year,month,1),mE=new Date(year,month,daysInMonth,23,59,59);
+    const as=new Date(a.startTime),ae=new Date(a.endTime),bs=new Date(b.startTime),be=new Date(b.endTime);
+    const vAs=as<mS?mS:as,vAe=ae>mE?mE:ae,vBs=bs<mS?mS:bs,vBe=be>mE?mE:be;
+    if(vAs>mE||vAe<mS||vBs>mE||vBe<mS)return false;
+    return vAs<=vBe&&vBs<=vAe;
   }
   function packSubRows(acts){
     const rows=[];
-    acts.forEach(act=>{let placed=false;for(const r of rows){if(!r.some(e=>actsOverlapRange(act,e))){r.push(act);placed=true;break;}}if(!placed)rows.push([act]);});
+    acts.forEach(act=>{
+      let placed=false;
+      for(const r of rows){if(!r.some(e=>actsOverlap(act,e))){r.push(act);placed=true;break;}}
+      if(!placed)rows.push([act]);
+    });
     return rows;
   }
 
-  function dayIdx(dt){
-    const yr=dt.getFullYear(),mo=dt.getMonth(),day=dt.getDate();
-    let idx=0;
-    for(const m of months){if(m.yr===yr&&m.mo===mo){idx+=day-1;break;}idx+=m.dim;}
-    return idx;
-  }
-  function barGeom(startStr,endStr){
-    const s=new Date(startStr),e=new Date(endStr);
-    if(s>rangeEndDate||e<rangeStart)return null;
-    const cs=s<rangeStart?rangeStart:s,ce=e>rangeEndDate?rangeEndDate:e;
-    const si=dayIdx(cs),ei=dayIdx(ce);
-    return{si,ei,colspan:ei-si+1};
-  }
-
-  // Build row items
+  // Build row items identical to renderCalendarView
   const rowItems=[];
   cats.forEach((catDef,ci)=>{
     rowItems.push({type:'cat',label:catDef.cat,ci});
     catDef.rows.forEach(rowDef=>{
       const rowActs=gameActs.filter(a=>rowDef.types.includes(a.type));
-      const visActs=rowActs.filter(a=>new Date(a.startTime)<=rangeEndDate&&new Date(a.endTime)>=rangeStart);
+      const visActs=rowActs.filter(a=>{
+        const s=new Date(a.startTime),e=new Date(a.endTime);
+        return s<=new Date(year,month,daysInMonth,23,59,59)&&e>=new Date(year,month,1);
+      });
       const subRows=visActs.length>0?packSubRows(visActs):[];
-      if(subRows.length===0){rowItems.push({type:'row',label:rowDef.label,acts:[],ci,subRowIdx:0,totalSubRows:1});}
-      else subRows.forEach((srActs,sri)=>rowItems.push({type:'row',label:sri===0?rowDef.label:`↳续行${sri+1}`,acts:srActs,ci,subRowIdx:sri,totalSubRows:subRows.length}));
+      if(subRows.length===0){
+        rowItems.push({type:'row',label:rowDef.label,acts:[],ci,subRowIdx:0,totalSubRows:1});
+      }else{
+        subRows.forEach((srActs,sri)=>{
+          rowItems.push({type:'row',label:sri===0?rowDef.label:`↳ 续行${sri+1}`,acts:srActs,ci,subRowIdx:sri,totalSubRows:subRows.length});
+        });
+      }
     });
   });
 
-  const totalCols = 1 + allDays.length;
-  let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+  // Color utilities
+  function lighten(hex,amt=0.55){
+    hex=hex.replace('#','');
+    if(hex.length===3)hex=hex.split('').map(c=>c+c).join('');
+    const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);
+    return '#'+[r,g,b].map(v=>Math.round(v+(255-v)*amt).toString(16).padStart(2,'0')).join('');
+  }
+
+  // Build spans for each row item: [{sd, ed, act, isPreheat}]
+  function buildSpans(item){
+    const mS=new Date(year,month,1),mE=new Date(year,month,daysInMonth,23,59,59);
+    const spans=[];
+    item.acts.forEach(act=>{
+      const s=new Date(act.startTime),e=new Date(act.endTime);
+      if(s<=mE&&e>=mS){
+        const sd=Math.max(1,s<mS?1:s.getDate());
+        const ed=Math.min(daysInMonth,e>mE?daysInMonth:e.getDate());
+        spans.push({sd,ed,act,isPreheat:false});
+      }
+      if(act.preheat){
+        const ps=new Date(act.preheat),pe=new Date(act.startTime);
+        if(ps<mE&&pe>mS){
+          const psd=Math.max(1,ps<mS?1:ps.getDate());
+          const ped=Math.min(daysInMonth,pe>mE?daysInMonth:Math.max(1,pe.getDate()-1));
+          if(psd<=ped)spans.push({sd:psd,ed:ped,act,isPreheat:true});
+        }
+      }
+    });
+    return spans;
+  }
+
+  // ── Generate HTML that Excel can open preserving merged cells & colors ──
+  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="UTF-8">
 <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
-<x:Name>${game}</x:Name>
+<x:Name>${calGame} ${year}年${mNames[month]}</x:Name>
 <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
 </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-<style>tr{height:22pt}td,th{font-family:"Microsoft YaHei",Arial,sans-serif;font-size:9pt;border:0.5pt solid #d0d0ce;vertical-align:middle}</style>
-</head><body><table border="1" cellspacing="0" cellpadding="2">`;
+<style>
+tr   { height:24pt; }
+td,th{ font-family:"Microsoft YaHei",Arial,sans-serif; font-size:9pt; border:0.5pt solid #d0d0ce; vertical-align:middle; }
+</style></head><body>
+<table border="1" cellspacing="0" cellpadding="3">`;
 
-  // Title row
-  html+=`<tr style="height:28pt"><td colspan="${totalCols}" style="font-size:13pt;font-weight:bold;background:#5046e4;color:#fff;text-align:center">${game} 排期日历 · ${months[0].yr}年${mNames[months[0].mo]}—${months[months.length-1].yr}年${mNames[months[months.length-1].mo]}</td></tr>`;
+  const totalCols = 1 + daysInMonth;
 
-  // Month label row
-  html+=`<tr style="height:18pt"><td style="background:#ece9ff;color:#3730a3;font-weight:bold;text-align:center">活动类型</td>`;
-  months.forEach(m=>{
-    html+=`<td colspan="${m.dim}" style="background:#ece9ff;color:#3730a3;font-weight:700;text-align:center;font-size:10pt">${m.yr}年${mNames[m.mo]}</td>`;
-  });
-  html+=`</tr>`;
+  // ── Row 1: Title ──
+  html+=`<tr style="height:30pt"><td colspan="${totalCols}" style="font-size:13pt;font-weight:bold;background:#5046e4;color:#ffffff;text-align:center;border:1pt solid #3730a3;">${calGame} 排期日历 &nbsp;${year}年${mNames[month]}</td></tr>`;
 
-  // Day header row
-  html+=`<tr style="height:30pt"><td style="font-weight:bold;background:#f7f7f6;color:#374151;text-align:center">活动类型</td>`;
-  allDays.forEach(day=>{
+  // ── Row 2: Day headers ──
+  html+=`<tr style="height:36pt"><td style="font-weight:bold;background:#ece9ff;color:#3730a3;text-align:center;min-width:90pt;">活动类型</td>`;
+  days.forEach(day=>{
     const bg=day.isToday?'#e8e6ff':day.isWe?'#fff0f0':'#f7f7f6';
     const tc=day.isToday?'#5046e4':day.isWe?'#d93025':'#595959';
-    html+=`<td style="text-align:center;background:${bg};color:${tc};font-weight:${day.isToday?'bold':'normal'};min-width:22pt">${day.d}<br>${DOW_ZH[day.dow]}</td>`;
+    const fw=day.isToday?'bold':'normal';
+    html+=`<td style="text-align:center;background:${bg};color:${tc};font-weight:${fw};min-width:28pt;width:28pt;">${day.d}<br>${DOW_ZH[day.dow]}</td>`;
   });
   html+=`</tr>`;
 
-  // Data rows
+  // ── Data rows ──
   rowItems.forEach(item=>{
     if(item.type==='cat'){
       const bg=catBgColors[item.ci%catBgColors.length]||'#f3f4f6';
       const tc=catTxColors[item.ci%catTxColors.length]||'#374151';
-      html+=`<tr style="height:18pt"><td colspan="${totalCols}" style="font-weight:bold;background:${bg};color:${tc};padding:2px 8px">${item.label}</td></tr>`;
+      html+=`<tr style="height:20pt"><td colspan="${totalCols}" style="font-weight:bold;font-size:9pt;background:${bg};color:${tc};padding:2px 8px;border:0.5pt solid #d0d0ce;">${item.label}</td></tr>`;
       return;
     }
+
+    // row type
     const labelBg=item.subRowIdx===0?'#fafafa':'#f3f4f6';
     const labelTc=item.subRowIdx===0?'#374151':'#9b9b9b';
-    html+=`<tr><td style="background:${labelBg};color:${labelTc};text-align:center;font-size:9pt">${item.label}</td>`;
+    const labelFw=item.subRowIdx===0?'500':'normal';
+    html+=`<tr style="height:22pt"><td style="background:${labelBg};color:${labelTc};font-weight:${labelFw};text-align:center;font-size:9pt;">${item.label}</td>`;
 
-    // Build spans
-    const spans=[];
-    item.acts.forEach(act=>{
-      const g=barGeom(act.startTime,act.endTime);
-      if(g) spans.push({...g,act,isPreheat:false});
-      if(act.preheat){
-        const pg=barGeom(act.preheat,act.startTime);
-        if(pg&&pg.colspan>0) spans.push({...pg,act,isPreheat:true});
-      }
-    });
-
-    let d=0;
-    while(d<allDays.length){
-      const span=spans.find(s=>s.si===d);
+    const spans=buildSpans(item);
+    // Build cell-by-cell: skip cells that are inside a span
+    const coveredUntil={}; // day -> end day of span covering it (exclusive start)
+    let d=1;
+    while(d<=daysInMonth){
+      // check if a span starts exactly on day d
+      const span=spans.find(s=>s.sd===d);
       if(span){
-        const col=TYPE_COLORS[span.act.type]||{bg:'#e5e7eb',text:'#374151',border:'#9ca3af'};
-        const cellBg=span.isPreheat?lighten(col.bg,0.45):col.bg;
-        const bd=span.isPreheat?`border:1pt dashed ${col.border};`:`border:0.5pt solid ${col.border};`;
+        const colspan=span.ed-span.sd+1;
+        const c=TYPE_COLORS[span.act.type]||{bg:'#e5e7eb',text:'#374151',border:'#9ca3af'};
+        const cellBg=span.isPreheat?lighten(c.bg,0.45):c.bg;
+        const cellTc=c.text;
+        const bdStyle=span.isPreheat?`border:1pt dashed ${c.border};`:`border:0.5pt solid ${c.border};`;
+        const fw=span.act.important?'bold':'normal';
         const label=span.isPreheat?`[预热]${span.act.name}`:span.act.name;
-        html+=`<td colspan="${span.colspan}" style="background:${cellBg};color:${col.text};${bd}font-weight:${span.act.important?'bold':'normal'};font-size:8pt;overflow:hidden;white-space:nowrap">${label}</td>`;
-        d+=span.colspan;
+        html+=`<td colspan="${colspan}" style="background:${cellBg};color:${cellTc};${bdStyle}font-weight:${fw};font-size:8pt;overflow:hidden;white-space:nowrap;" title="${span.act.name}">${label}</td>`;
+        d+=colspan;
       }else{
-        const inside=spans.find(s=>d>s.si&&d<=s.ei);
-        if(inside){d++;continue;}
-        const day=allDays[d];
-        const bg=day.isToday?'#f0eeff':day.isWe?'#fdf8f8':'#fff';
-        html+=`<td style="background:${bg}"></td>`;
-        d++;
+        // check if d is inside a span (not the start — already rendered)
+        const inside=spans.find(s=>d>s.sd&&d<=s.ed);
+        if(inside){
+          // This shouldn't happen if colspan is correct; skip
+          d++;
+        }else{
+          const day=days[d-1];
+          const bg=day.isToday?'#f0eeff':day.isWe?'#fdf8f8':'#ffffff';
+          html+=`<td style="background:${bg};"></td>`;
+          d++;
+        }
       }
     }
     html+=`</tr>`;
   });
 
   html+=`</table></body></html>`;
+
   const blob=new Blob(['\uFEFF'+html],{type:'application/vnd.ms-excel;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -2681,12 +2661,2005 @@ function exportCalendarExcelAll(){
   const pad=v=>String(v).padStart(2,'0');
   const n=new Date();
   const stamp=`${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}_${pad(n.getHours())}${pad(n.getMinutes())}`;
-  a.download=`排期日历_${game}_${stamp}.xls`;
+  a.download=`排期日历_${calGame}_${year}年${month+1}月_${stamp}.xls`;
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showNotif(`✅ 已导出：${game} ${totalMonths}个月排期日历`);
+  showNotif(`✅ 已导出：${calGame} ${year}年${mNames[month]} 排期日历`);
+}
+// ===================== END EXPORT CALENDAR =====================
+
+
+// Tooltip
+function showTip(e,id,mode){
+  const a=findActivityByRef(id);if(!a)return;
+  const t=document.getElementById('tip');
+  const st=getStatus(a);
+  t.innerHTML=`<div class="tip-title">${a.name}</div>
+    <div class="tip-row">竞品：<span>${a.game}</span></div>
+    <div class="tip-row">类型：<span>${a.type}</span></div>
+    <div class="tip-row">触发：<span>${getTriggerLabel(a.triggerType)}</span></div>
+    <div class="tip-row">时间：<span>${a.startTime.split(' ')[0]} ~ ${a.endTime.split(' ')[0]}</span></div>
+    ${mode==='preheat'&&a.preheat?`<div class="tip-row" style="color:var(--primary)">预热：<span>${a.preheat.split(' ')[0]} 起</span></div>`:''}
+    ${a.intensity?`<div class="tip-row">力度：<span>${a.intensity}</span></div>`:''}
+    <div class="tip-row">渠道：<span>${a.channels.join(' / ')}</span></div>
+    <div style="margin-top:6px"><span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span></div>`;
+  t.style.display='block';
+  moveTip(e);
+}
+function moveTip(e){
+  const t=document.getElementById('tip');
+  const x=Math.min(e.clientX+14,window.innerWidth-280);
+  const y=Math.min(e.clientY+14,window.innerHeight-140);
+  t.style.left=x+'px';t.style.top=y+'px';
+}
+function hideTip(){document.getElementById('tip').style.display='none'}
+document.addEventListener('mousemove',e=>{const t=document.getElementById('tip');if(t.style.display!=='none')moveTip(e)});
+
+// ===================== LIST VIEW =====================
+function renderListView(container){
+  const gameCounts={};
+  activities.forEach(a=>gameCounts[a.game]=(gameCounts[a.game]||0)+1);
+  const now=TODAY;
+  const active=activities.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now).length;
+  const upcoming=activities.filter(a=>new Date(a.startTime)>now).length;
+  const ended=activities.filter(a=>new Date(a.endTime)<now).length;
+  const canEdit=currentUser.role!=='viewer',canDel=currentUser.role!=='viewer';
+
+  container.innerHTML=`
+  <div class="list-view">
+    <div class="sidebar">
+      <div class="sidebar-section-label">竞品游戏</div>
+      <div class="filter-item ${activeGameFilter==='all'?'active':''}" onclick="setFilter('game','all')">
+        <span>全部游戏</span><span class="filter-count">${activities.length}</span>
+      </div>
+      ${GAMES.filter(g=>gameCounts[g]).map(g=>`
+        <div class="filter-item ${activeGameFilter===g?'active':''}" onclick="setFilter('game','${g}')">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px">${g}</span>
+          <span class="filter-count">${gameCounts[g]}</span>
+        </div>`).join('')}
+      <div class="sidebar-section-label" style="margin-top:8px">活动类型</div>
+      <div class="filter-item ${activeTypeFilter==='all'?'active':''}" onclick="setFilter('type','all')">全部类型</div>
+      ${ACT_TYPES.filter(t=>activities.some(a=>a.type===t)).map(t=>`
+        <div class="filter-item ${activeTypeFilter===t?'active':''}" onclick="setFilter('type','${t}')">${t}</div>`).join('')}
+      <div style="margin-top:auto;padding-top:8px">
+        <button class="btn" style="width:100%;font-size:11px" onclick="showExportImport()">导出 / 导入</button>
+      </div>
+    </div>
+    <div class="list-content">
+      <div class="stat-row">
+        <div class="stat-card"><div class="val">${activities.length}</div><div class="lbl">活动总数</div></div>
+        <div class="stat-card"><div class="val" style="color:#14532d">${active}</div><div class="lbl">进行中</div></div>
+        <div class="stat-card"><div class="val" style="color:#1d4ed8">${upcoming}</div><div class="lbl">即将开始</div></div>
+        <div class="stat-card"><div class="val" style="color:#6b7280">${ended}</div><div class="lbl">已结束</div></div>
+      </div>
+      <div class="list-toolbar">
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="searchInput" placeholder="搜索活动名称..." oninput="refreshTable()">
+        </div>
+        <select id="statusFilter" onchange="refreshTable()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:5px;color:var(--text);background:var(--bg)">
+          <option value="all">全部状态</option>
+          <option value="active">进行中</option>
+          <option value="upcoming">即将开始</option>
+          <option value="ended">已结束</option>
+        </select>
+        <select id="sortBy" onchange="refreshTable()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:5px;color:var(--text);background:var(--bg)">
+          <option value="startTime">按开始时间</option>
+          <option value="createTime">按录入时间</option>
+          <option value="game">按游戏名称</option>
+        </select>
+        <span id="resultCount" style="font-size:11px;color:var(--text3);margin-left:auto"></span>
+      </div>
+      <div class="list-table-wrap">
+        <table>
+          <colgroup>
+            <col style="width:130px"><col style="width:88px"><col style="width:220px"><col style="width:80px">
+            <col style="width:96px"><col style="width:96px"><col style="width:64px"><col style="width:90px"><col style="width:120px">
+          </colgroup>
+          <thead><tr>
+            <th>竞品游戏</th><th>活动类型</th><th>活动名称</th><th>状态</th>
+            <th>开始时间</th><th>结束时间</th><th>周期</th><th>渠道</th><th>操作</th>
+          </tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+  refreshTable();
 }
 
+function refreshTable(){
+  const q=(document.getElementById('searchInput')||{value:''}).value.toLowerCase();
+  const sf=(document.getElementById('statusFilter')||{value:'all'}).value;
+  const sb=(document.getElementById('sortBy')||{value:'startTime'}).value;
+  const now=TODAY;
+  let list=activities.filter(a=>{
+    if(activeGameFilter!=='all'&&a.game!==activeGameFilter)return false;
+    if(activeTypeFilter!=='all'&&a.type!==activeTypeFilter)return false;
+    if(q&&!a.name.toLowerCase().includes(q)&&!a.game.includes(q)&&!a.type.includes(q))return false;
+    if(sf==='active'&&!(new Date(a.startTime)<=now&&new Date(a.endTime)>=now))return false;
+    if(sf==='upcoming'&&new Date(a.startTime)<=now)return false;
+    if(sf==='ended'&&new Date(a.endTime)>=now)return false;
+    return true;
+  });
+  list.sort((x,y)=>sb==='game'?x.game.localeCompare(y.game):new Date(y[sb])-new Date(x[sb]));
+  const rc=document.getElementById('resultCount');
+  if(rc)rc.textContent=`共 ${list.length} 条`;
+  const tb=document.getElementById('tableBody');if(!tb)return;
+  const canEdit=currentUser.role!=='viewer',canDel=currentUser.role!=='viewer';
+  if(!list.length){tb.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">暂无符合条件的活动记录</td></tr>`;return;}
+  tb.innerHTML=list.map(a=>{
+    const st=getStatus(a);
+    const starBadge=a.important?`<span title="重要活动" style="color:#f59e0b;margin-right:4px;font-size:13px">⭐</span>`:'';
+    return`<tr ${a.important?'style="background:#fffdf0"':''}>
+      <td style="font-weight:500">${a.game}</td>
+      <td>${typeTag(a.type)}</td>
+      <td title="${a.name}">${starBadge}${a.name}</td>
+      <td><span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span></td>
+      <td style="font-size:11px">${a.startTime.split(' ')[0]}</td>
+      <td style="font-size:11px">${a.endTime.split(' ')[0]}</td>
+      <td style="font-size:11px">${getDur(a)}天</td>
+      <td style="font-size:11px;color:var(--text2)">${a.channels.join('/')}</td>
+      <td>
+        <button class="btn sm" onclick="showDetail('${getActivityRef(a)}')">详情</button>
+        ${canEdit?`<button class="btn sm" onclick="showModal('edit','${getActivityRef(a)}')" style="margin-left:3px">编辑</button>`:''}
+        ${canEdit?`<button class="btn sm" onclick="copyActivity('${getActivityRef(a)}')" style="margin-left:3px" title="复制此活动">复制</button>`:''}
+        ${canDel?`<button class="btn sm danger" onclick="confirmDelete('${getActivityRef(a)}')" style="margin-left:3px">删除</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function setFilter(dim,val){
+  if(dim==='game')activeGameFilter=val;else activeTypeFilter=val;
+  persistUiState();
+  renderMain();
+}
+
+// ===================== STATS =====================
+function renderStatsView(container){
+  const typeCounts={},gameCounts={},goalCounts={};
+  activities.forEach(a=>{
+    typeCounts[a.type]=(typeCounts[a.type]||0)+1;
+    gameCounts[a.game]=(gameCounts[a.game]||0)+1;
+    (a.goals||[]).forEach(g=>goalCounts[g]=(goalCounts[g]||0)+1);
+  });
+  const now=TODAY;
+  const active=activities.filter(a=>new Date(a.startTime)<=now&&new Date(a.endTime)>=now).length;
+  const avgDur=Math.round(activities.reduce((s,a)=>s+getDur(a),0)/activities.length);
+  const typeColors=['#3b82f6','#7c3aed','#db2777','#dc2626','#16a34a','#ca8a04','#0d9488','#ea580c'];
+
+  container.innerHTML=`<div class="stats-view">
+    <div class="stats-grid">
+      <div class="stat-big"><div class="num">${activities.length}</div><div class="lbl">活动总数</div></div>
+      <div class="stat-big"><div class="num" style="color:#14532d">${active}</div><div class="lbl">当前进行中</div></div>
+      <div class="stat-big"><div class="num">${avgDur}</div><div class="lbl">平均活动周期（天）</div></div>
+      <div class="stat-big"><div class="num">${Object.keys(gameCounts).length}</div><div class="lbl">覆盖竞品数量</div></div>
+    </div>
+    <div class="stats-panels">
+      <div class="panel">
+        <div class="panel-title">竞品游戏活动量</div>
+        ${Object.entries(gameCounts).sort((a,b)=>b[1]-a[1]).map(([g,c])=>`
+          <div class="bar-row">
+            <div style="font-size:12px;width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)">${g}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(c/activities.length*100)}%;background:#5046e4"></div></div>
+            <div class="progress-label">${c}</div>
+          </div>`).join('')}
+      </div>
+      <div class="panel">
+        <div class="panel-title">活动类型分布</div>
+        ${Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).map(([t,c],i)=>`
+          <div class="bar-row">
+            <div style="font-size:12px;width:80px;color:var(--text2)">${t}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(c/activities.length*100)}%;background:${typeColors[i%typeColors.length]}"></div></div>
+            <div class="progress-label">${c}</div>
+          </div>`).join('')}
+      </div>
+      <div class="panel">
+        <div class="panel-title">活动目标分布</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          ${Object.entries(goalCounts).sort((a,b)=>b[1]-a[1]).map(([g,c])=>`
+            <div style="text-align:center;padding:12px 18px;background:var(--bg2);border-radius:6px;min-width:80px">
+              <div style="font-size:20px;font-weight:700">${c}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:3px">${g}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">渠道分布</div>
+        ${(()=>{const cc={};activities.forEach(a=>a.channels.forEach(c=>cc[c]=(cc[c]||0)+1));
+          return Object.entries(cc).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`
+            <div class="bar-row">
+              <div style="font-size:12px;width:80px;color:var(--text2)">${c}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${Math.round(n/activities.length*100)}%;background:#0d9488"></div></div>
+              <div class="progress-label">${n}</div>
+            </div>`).join('');})()}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ===================== COLLAB =====================
+function renderCollabView(container){
+  const canManage=currentUser.role==='admin';
+
+  // Build game list rows
+  const gameRows=GAMES.map((g,i)=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px" id="game-row-${i}">
+      <div style="display:flex;align-items:center;gap:8px;flex:1">
+        <span class="tag" style="background:#e8e6ff;color:#5046e4;font-size:10px">${i+1}</span>
+        <span id="game-label-${i}">${g}</span>
+      </div>
+      ${canManage?`<div style="display:flex;gap:5px">
+        <button class="btn sm" onclick="startEditGame(${i})">修改</button>
+        <button class="btn sm danger" onclick="confirmDeleteGame(${i})">删除</button>
+      </div>`:''}
+    </div>`).join('');
+
+  // Build type list rows — draggable if admin
+  const typeRows=ACT_TYPES.map((t,i)=>{
+    const c=TYPE_COLORS[t]||{bg:'#f3f4f6',text:'#6b7280',border:'#d1d5db'};
+    return`<div class="type-drag-row" draggable="${canManage}" data-idx="${i}"
+      style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px;cursor:${canManage?'grab':'default'};transition:background .1s"
+      ${canManage?`ondragstart="typeDragStart(event,${i})" ondragover="typeDragOver(event)" ondragleave="typeDragLeave(event)" ondrop="typeDrop(event,${i})"`:''}>
+      <div style="display:flex;align-items:center;gap:8px;flex:1">
+        ${canManage?`<span style="color:var(--text3);font-size:12px;margin-right:2px;user-select:none">⠿</span>`:''}
+        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c.bg};border:1px solid ${c.border||c.bg};flex-shrink:0"></span>
+        <span>${t}</span>
+      </div>
+      ${canManage?`<div style="display:flex;gap:5px">
+        <button class="btn sm" onclick="startEditType(${i})">修改</button>
+        <button class="btn sm danger" onclick="confirmDeleteType(${i})">删除</button>
+      </div>`:''}
+    </div>`;}).join('');
+
+  container.innerHTML=`<div class="collab-view" style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- ① 竞品游戏管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600">竞品游戏管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">当前共 ${GAMES.length} 款竞品游戏，管理员可新增或修改</div>
+        </div>
+        ${canManage?`<button class="btn primary" onclick="showAddGameDialog()">+ 新增游戏</button>`:''}
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);font-weight:600;display:flex;justify-content:space-between">
+          <span>游戏名称</span><span>操作</span>
+        </div>
+        <div id="gameListWrap">${gameRows}</div>
+        ${!GAMES.length?`<div style="padding:24px;text-align:center;color:var(--text3)">暂无竞品游戏，点击「新增游戏」添加</div>`:''}
+      </div>
+    </div>
+
+    <!-- ② 活动类型管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600">活动类型管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">当前共 ${ACT_TYPES.length} 种活动类型${canManage?'，可拖拽⠿调整排序，排序同步影响日历行顺序':'，管理员可新增或修改'}</div>
+        </div>
+        ${canManage?`<button class="btn primary" onclick="showAddTypeDialog()">+ 新增类型</button>`:''}
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);font-weight:600;display:flex;justify-content:space-between">
+          <span>类型名称${canManage?' （拖拽排序）':''}</span><span>操作</span>
+        </div>
+        <div id="typeListWrap">${typeRows}</div>
+        ${!ACT_TYPES.length?`<div style="padding:24px;text-align:center;color:var(--text3)">暂无活动类型，点击「新增类型」添加</div>`:''}
+      </div>
+      <div style="margin-top:8px;padding:10px 12px;background:#fef9c3;border-radius:6px;font-size:11px;color:#713f12">
+        提示：修改活动类型名称后，已录入的历史活动类型标签会同步更新。拖拽调整排序后日历中各行顺序同步变化。
+      </div>
+    </div>
+
+    <!-- ③ 日历分组管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600">日历分组管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">管理排期日历左侧的分组标题（如「版本&amp;活动」「商业化」），可修改名称、调整顺序、新增或删除分组</div>
+        </div>
+        ${canManage?`<div style="display:flex;gap:6px">
+          <select id="cat-game-sel" style="font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:5px" onchange="renderCatPanel()">
+            ${GAMES.map(g=>`<option value="${g}" ${g===calGame?'selected':''}>${g}</option>`).join('')}
+          </select>
+          <button class="btn primary" onclick="showAddCatDialog()">+ 新增分组</button>
+        </div>`:''}
+      </div>
+      <div id="cat-panel">
+        ${canManage ? renderCatPanelHtml(calGame) : `<div style="padding:14px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text3)">仅管理员可编辑分组</div>`}
+      </div>
+      <div style="margin-top:8px;padding:10px 12px;background:#e8e6ff;border-radius:6px;font-size:11px;color:#3c3489;line-height:1.7">
+        <strong>说明：</strong>分组是日历的视觉分区，每个分组下包含若干活动类型行。拖拽分组可调整分组顺序，点击分组内的类型可将其移动到其他分组。
+      </div>
+    </div>
+
+    <!-- ④ 调研报告标签管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600">调研报告标签管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">管理「调研报告」页签中使用的标签，共 ${REPORT_TAGS.length} 个</div>
+        </div>
+        ${canManage?`<button class="btn primary" onclick="showAddReportTagDialog()">+ 新增标签</button>`:''}
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);font-weight:600;display:flex;justify-content:space-between">
+          <span>标签名称</span><span>操作</span>
+        </div>
+        ${REPORT_TAGS.map((tag,i)=>{
+          const c=REPORT_TAG_COLORS[tag]||{bg:'#f3f4f6',text:'#6b7280'};
+          return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="rtag" style="background:${c.bg};color:${c.text}">${tag}</span>
+            </div>
+            ${canManage?`<div style="display:flex;gap:5px">
+              <button class="btn sm" onclick="showEditReportTagDialog(${i})">修改</button>
+              <button class="btn sm danger" onclick="confirmDeleteReportTag(${i})">删除</button>
+            </div>`:''}
+          </div>`;
+        }).join('')}
+        ${!REPORT_TAGS.length?`<div style="padding:24px;text-align:center;color:var(--text3)">暂无标签，点击「新增标签」添加</div>`:''}
+      </div>
+    </div>
+
+    <!-- ⑤ 成员与权限管理 -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div>
+          <div style="font-size:15px;font-weight:600">成员与权限管理</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">管理员可审批注册申请、调整成员权限</div>
+        </div>
+      </div>
+      ${!getSB()?`<div style="padding:16px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text3)">
+        ☁ 请先在「存储设置」中配置 Supabase，才能使用成员管理功能。
+      </div>`
+      :currentUser.role!=='admin'?`<div style="padding:16px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text3)">
+        仅管理员可查看和管理成员列表。
+      </div>`
+      :`<div id="user-mgmt"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">正在加载成员列表…</div></div>`}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px">
+        ${[['管理员','#fee2e2','#991b1b','审批新账号申请、修改成员权限、管理游戏和活动类型、删除任意记录、导出全部数据'],
+           ['编辑者','#dbeafe','#1d4ed8','新增/修改/删除自己录入的记录，上传图片视频，查看全部数据，导出数据'],
+           ['查看者','#f3f4f6','#6b7280','只读权限，仅查看活动记录和媒体库，无修改/删除/上传权限']].map(([r,bg,tc,desc])=>`
+          <div style="padding:12px 14px;background:${bg};border-radius:8px">
+            <div style="font-weight:600;color:${tc};margin-bottom:5px;font-size:13px">${r}</div>
+            <div style="font-size:11px;color:${tc};opacity:.8;line-height:1.7">${desc}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+  </div>`;
+
+  // Auto-load user list for admins
+  if(getSB()&&currentUser.role==='admin'){
+    setTimeout(()=>loadAndRenderUsers(),80);
+  }
+}
+
+// ===================== GAME MANAGEMENT =====================
+function showAddGameDialog(){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return}
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:420px;text-align:left">
+    <div class="confirm-title" style="text-align:left;margin-bottom:16px">新增竞品游戏</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">游戏名称 <span class="req">*</span></div>
+      <input id="new-game-name" type="text" placeholder="如：蛋仔派对、英雄联盟手游" autofocus>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">新游戏会自动添加到排期日历的游戏切换栏</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddGame()">确认新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('new-game-name')?.focus(),50);
+}
+
+function doAddGame(){
+  const name=document.getElementById('new-game-name').value.trim();
+  if(!name){showNotif('游戏名称不能为空',true);return}
+  if(GAMES.includes(name)){showNotif(`「${name}」已存在，请勿重复添加`,true);return}
+  GAMES.push(name);
+  // add default cat config for new game
+  GAME_CATS[name]=[
+    {cat:'版本&活动',rows:ACT_TYPES.slice(0,4).map(t=>({label:t,types:[t]}))},
+    {cat:'商业化',rows:ACT_TYPES.slice(4).map(t=>({label:t,types:[t]}))},
+  ];
+  GAME_CAT_COLORS[name]=['#dbeafe','#dcfce7','#fef9c3'];
+  GAME_CAT_TEXT[name]=['#1d4ed8','#14532d','#713f12'];
+  addLog(`新增了竞品游戏「${name}」`);
+  showNotif(`新增成功：已添加竞品游戏「${name}」`);
+  closeModal();renderMain();
+}
+
+function startEditGame(idx){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return}
+  const oldName=GAMES[idx];
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:420px;text-align:left">
+    <div class="confirm-title" style="text-align:left;margin-bottom:16px">修改竞品游戏名称</div>
+    <div class="fg full" style="margin-bottom:6px">
+      <div class="flabel">游戏名称 <span class="req">*</span></div>
+      <input id="edit-game-name" type="text" value="${oldName}">
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:16px">注意：修改名称后，已录入活动的「竞品游戏」字段会同步更新</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doEditGame(${idx},'${oldName}')">保存修改</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{const el=document.getElementById('edit-game-name');if(el){el.focus();el.select();}},50);
+}
+
+function doEditGame(idx,oldName){
+  const newName=document.getElementById('edit-game-name').value.trim();
+  if(!newName){showNotif('游戏名称不能为空',true);return}
+  if(newName!==oldName&&GAMES.includes(newName)){showNotif(`「${newName}」已存在`,true);return}
+  GAMES[idx]=newName;
+  // migrate activities
+  activities.forEach(a=>{if(a.game===oldName)a.game=newName});
+  // migrate GAME_CATS, GAME_CAT_COLORS, GAME_CAT_TEXT
+  if(GAME_CATS[oldName]){GAME_CATS[newName]=GAME_CATS[oldName];delete GAME_CATS[oldName]}
+  if(GAME_CAT_COLORS[oldName]){GAME_CAT_COLORS[newName]=GAME_CAT_COLORS[oldName];delete GAME_CAT_COLORS[oldName]}
+  if(GAME_CAT_TEXT[oldName]){GAME_CAT_TEXT[newName]=GAME_CAT_TEXT[oldName];delete GAME_CAT_TEXT[oldName]}
+  if(calGame===oldName)calGame=newName;
+  addLog(`将竞品游戏「${oldName}」重命名为「${newName}」`);
+  showNotif(`修改成功：「${oldName}」已更名为「${newName}」`);
+  closeModal();renderMain();
+}
+
+function confirmDeleteGame(idx){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return}
+  const name=GAMES[idx];
+  const count=activities.filter(a=>a.game===name).length;
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box">
+    <div class="confirm-title">确认删除竞品游戏</div>
+    <div class="confirm-desc">确定删除「${name}」吗？<br>${count>0?`<span style="color:#d93025;font-weight:600">该游戏下有 ${count} 条活动记录，删除游戏不会删除这些记录，但游戏切换栏将不再显示该游戏。</span>`:'该游戏暂无活动记录。'}</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="doDeleteGame(${idx})">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function doDeleteGame(idx){
+  const name=GAMES[idx];
+  GAMES.splice(idx,1);
+  delete GAME_CATS[name];
+  delete GAME_CAT_COLORS[name];
+  delete GAME_CAT_TEXT[name];
+  if(calGame===name)calGame=GAMES[0]||'';
+  addLog(`删除了竞品游戏「${name}」`);
+  showNotif(`已删除竞品游戏「${name}」`);
+  closeModal();renderMain();
+}
+
+// ===================== TYPE MANAGEMENT =====================
+// Preset color palette for new types
+const TYPE_COLOR_PRESETS=[
+  {bg:'#dbeafe',text:'#1d4ed8',border:'#3b82f6'},
+  {bg:'#ede9fe',text:'#5b21b6',border:'#7c3aed'},
+  {bg:'#fce7f3',text:'#9d174d',border:'#db2777'},
+  {bg:'#fee2e2',text:'#991b1b',border:'#dc2626'},
+  {bg:'#dcfce7',text:'#14532d',border:'#16a34a'},
+  {bg:'#fef9c3',text:'#713f12',border:'#ca8a04'},
+  {bg:'#ccfbf1',text:'#134e4a',border:'#0d9488'},
+  {bg:'#ffedd5',text:'#7c2d12',border:'#ea580c'},
+  {bg:'#f3e8ff',text:'#6b21a8',border:'#a855f7'},
+  {bg:'#fdf2f8',text:'#831843',border:'#ec4899'},
+  {bg:'#ecfdf5',text:'#065f46',border:'#10b981'},
+  {bg:'#fff7ed',text:'#9a3412',border:'#f97316'},
+];
+
+function showAddTypeDialog(){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return}
+  const swatches=TYPE_COLOR_PRESETS.map((c,i)=>
+    `<div onclick="selectTypeColor(${i})" id="swatch-${i}" style="width:22px;height:22px;border-radius:4px;background:${c.bg};border:2px solid ${i===0?c.border:'transparent'};cursor:pointer" title="${c.bg}"></div>`
+  ).join('');
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:460px;text-align:left">
+    <div class="confirm-title" style="text-align:left;margin-bottom:16px">新增活动类型</div>
+    <div class="fg full" style="margin-bottom:12px">
+      <div class="flabel">类型名称 <span class="req">*</span></div>
+      <input id="new-type-name" type="text" placeholder="如：限时任务、社区活动" autofocus>
+    </div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">标签配色</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="colorSwatches">${swatches}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:5px">选择一个颜色用于活动列表和日历色块标签</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddType()">确认新增</button>
+    </div>
+  </div>`;
+  ov._selectedColorIdx=0;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('new-type-name')?.focus(),50);
+}
+
+function selectTypeColor(idx){
+  const ov=document.getElementById('modal-overlay');
+  if(!ov)return;
+  ov._selectedColorIdx=idx;
+  TYPE_COLOR_PRESETS.forEach((_,i)=>{
+    const el=document.getElementById(`swatch-${i}`);
+    if(el)el.style.border=i===idx?`2px solid ${TYPE_COLOR_PRESETS[i].border}`:'2px solid transparent';
+  });
+}
+
+function doAddType(){
+  const name=document.getElementById('new-type-name').value.trim();
+  if(!name){showNotif('类型名称不能为空',true);return}
+  if(ACT_TYPES.includes(name)){showNotif(`「${name}」已存在，请勿重复添加`,true);return}
+  const ov=document.getElementById('modal-overlay');
+  const colorIdx=ov?._selectedColorIdx||0;
+  ACT_TYPES.push(name);
+  TYPE_COLORS[name]=TYPE_COLOR_PRESETS[colorIdx%TYPE_COLOR_PRESETS.length];
+  // add row to all games' GAME_CATS
+  Object.keys(GAME_CATS).forEach(g=>{
+    const cats=GAME_CATS[g];
+    if(cats&&cats.length>0){
+      // append to last cat group
+      cats[cats.length-1].rows.push({label:name,types:[name]});
+    }
+  });
+  addLog(`新增了活动类型「${name}」`);
+  showNotif(`新增成功：已添加活动类型「${name}」`);
+  closeModal();renderMain();
+}
+
+function startEditType(idx){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return}
+  const oldName=ACT_TYPES[idx];
+  const curColor=TYPE_COLORS[oldName]||TYPE_COLOR_PRESETS[0];
+  const curColorIdx=TYPE_COLOR_PRESETS.findIndex(c=>c.bg===curColor.bg)||0;
+  const swatches=TYPE_COLOR_PRESETS.map((c,i)=>
+    `<div onclick="selectTypeColor(${i})" id="swatch-${i}" style="width:22px;height:22px;border-radius:4px;background:${c.bg};border:2px solid ${i===curColorIdx?c.border:'transparent'};cursor:pointer"></div>`
+  ).join('');
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:460px;text-align:left">
+    <div class="confirm-title" style="text-align:left;margin-bottom:16px">修改活动类型</div>
+    <div class="fg full" style="margin-bottom:12px">
+      <div class="flabel">类型名称 <span class="req">*</span></div>
+      <input id="edit-type-name" type="text" value="${oldName}">
+    </div>
+    <div class="fg full" style="margin-bottom:6px">
+      <div class="flabel">标签配色</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="colorSwatches">${swatches}</div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:16px">注意：修改名称后，已录入活动的类型字段会同步更新</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doEditType(${idx},'${oldName}')">保存修改</button>
+    </div>
+  </div>`;
+  ov._selectedColorIdx=curColorIdx>=0?curColorIdx:0;
+  document.body.appendChild(ov);
+  setTimeout(()=>{const el=document.getElementById('edit-type-name');if(el){el.focus();el.select();}},50);
+}
+
+function doEditType(idx,oldName){
+  const newName=document.getElementById('edit-type-name').value.trim();
+  if(!newName){showNotif('类型名称不能为空',true);return}
+  if(newName!==oldName&&ACT_TYPES.includes(newName)){showNotif(`「${newName}」已存在`,true);return}
+  const ov=document.getElementById('modal-overlay');
+  const colorIdx=ov?._selectedColorIdx||0;
+  ACT_TYPES[idx]=newName;
+  TYPE_COLORS[newName]=TYPE_COLOR_PRESETS[colorIdx%TYPE_COLOR_PRESETS.length];
+  if(newName!==oldName)delete TYPE_COLORS[oldName];
+  // migrate activities
+  activities.forEach(a=>{if(a.type===oldName)a.type=newName});
+  // migrate GAME_CATS rows
+  Object.values(GAME_CATS).forEach(cats=>cats.forEach(cat=>cat.rows.forEach(row=>{
+    row.types=row.types.map(t=>t===oldName?newName:t);
+    if(row.label===oldName)row.label=newName;
+  })));
+  addLog(`将活动类型「${oldName}」修改为「${newName}」`);
+  showNotif(`修改成功：「${oldName}」已更名为「${newName}」`);
+  closeModal();renderMain();
+}
+
+function confirmDeleteType(idx){
+  if(currentUser.role!=='admin'){showNotif('仅管理员可操作',true);return}
+  const name=ACT_TYPES[idx];
+  const count=activities.filter(a=>a.type===name).length;
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box">
+    <div class="confirm-title">确认删除活动类型</div>
+    <div class="confirm-desc">确定删除类型「${name}」吗？<br>${count>0?`<span style="color:#d93025;font-weight:600">该类型下有 ${count} 条活动记录，删除类型不会删除这些记录，但新增活动时将无法再选择该类型。</span>`:'该类型暂无关联活动。'}</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="doDeleteType(${idx})">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function doDeleteType(idx){
+  const name=ACT_TYPES[idx];
+  ACT_TYPES.splice(idx,1);
+  delete TYPE_COLORS[name];
+  // remove from GAME_CATS rows
+  Object.values(GAME_CATS).forEach(cats=>cats.forEach(cat=>{
+    cat.rows=cat.rows.filter(row=>!row.types.every(t=>t===name));
+  }));
+  addLog(`删除了活动类型「${name}」`);
+  showNotif(`已删除活动类型「${name}」`);
+  closeModal();renderMain();
+}
+
+// ===================== TYPE DRAG REORDER =====================
+let _dragTypeIdx = null;
+
+function typeDragStart(e, idx){
+  _dragTypeIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '0.4';
+}
+
+function typeDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.style.background = 'var(--bg2)';
+  e.currentTarget.style.borderTop = '2px solid #5046e4';
+}
+
+function typeDragLeave(e){
+  e.currentTarget.style.background = '';
+  e.currentTarget.style.borderTop = '';
+}
+
+function typeDrop(e, targetIdx){
+  e.preventDefault();
+  e.currentTarget.style.background = '';
+  e.currentTarget.style.borderTop = '';
+  if(_dragTypeIdx === null || _dragTypeIdx === targetIdx){ _dragTypeIdx=null; return; }
+
+  // Reorder ACT_TYPES array
+  const moved = ACT_TYPES.splice(_dragTypeIdx, 1)[0];
+  ACT_TYPES.splice(targetIdx, 0, moved);
+
+  // Also reorder rows in GAME_CATS to match new type order
+  // Each game's cat rows: sort rows within each cat to follow ACT_TYPES order
+  Object.values(GAME_CATS).forEach(cats=>{
+    cats.forEach(cat=>{
+      cat.rows.sort((a,b)=>{
+        const ai = Math.min(...a.types.map(t=>ACT_TYPES.indexOf(t)).filter(i=>i>=0));
+        const bi = Math.min(...b.types.map(t=>ACT_TYPES.indexOf(t)).filter(i=>i>=0));
+        return (ai===-1?999:ai)-(bi===-1?999:bi);
+      });
+    });
+  });
+
+  _dragTypeIdx = null;
+  addLog(`调整了活动类型排序`);
+  showNotif('排序已更新，日历行顺序同步变化');
+  saveData();
+  refreshCatPanel();
+}
+// ===================== END TYPE DRAG REORDER =====================
+
+// ===================== CATEGORY GROUP MANAGEMENT =====================
+
+function renderCatPanelHtml(game){
+  const cats = GAME_CATS[game] || [];
+  const catColors = GAME_CAT_COLORS[game] || [];
+  const catTexts  = GAME_CAT_TEXT[game]   || [];
+  if(!cats.length) return `<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">该游戏暂无分组，点击「新增分组」创建</div>`;
+
+  return cats.map((cat,ci)=>{
+    const bg = catColors[ci % catColors.length] || '#f3f4f6';
+    const tc = catTexts[ci % catTexts.length]   || '#374151';
+    const typeChips = cat.rows.map((row,ri)=>`
+      <span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border2);border-radius:14px;padding:2px 8px;font-size:11px;cursor:pointer;margin:2px"
+        onclick="showMoveTypeDialog('${game}',${ci},${ri})"
+        title="点击移动到其他分组">
+        ${row.label}
+        <span style="color:var(--text3);font-size:10px">⇄</span>
+      </span>`).join('');
+
+    return`<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden"
+      draggable="true" data-ci="${ci}"
+      ondragstart="catDragStart(event,${ci},'${game}')"
+      ondragover="catDragOver(event)"
+      ondragleave="catDragLeave(event)"
+      ondrop="catDrop(event,${ci},'${game}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${bg};cursor:grab">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:${tc};opacity:.5;font-size:14px">⠿</span>
+          <span style="font-size:13px;font-weight:600;color:${tc}">${cat.cat}</span>
+          <span style="font-size:10px;color:${tc};opacity:.7">${cat.rows.length} 个类型</span>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="btn sm" onclick="showEditCatDialog('${game}',${ci})" style="font-size:10px;padding:2px 8px">修改名称</button>
+          <button class="btn sm" onclick="showAddTypeToCatDialog('${game}',${ci})" style="font-size:10px;padding:2px 8px">+ 添加类型</button>
+          <button class="btn sm danger" onclick="confirmDeleteCat('${game}',${ci})" style="font-size:10px;padding:2px 8px">删除分组</button>
+        </div>
+      </div>
+      <div style="padding:8px 12px;background:var(--bg);min-height:36px;display:flex;flex-wrap:wrap;align-items:center;gap:2px">
+        ${typeChips || `<span style="font-size:11px;color:var(--text3)">暂无活动类型，点击「+ 添加类型」</span>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCatPanel(){
+  const sel = document.getElementById('cat-game-sel');
+  const game = sel ? sel.value : calGame;
+  const panel = document.getElementById('cat-panel');
+  if(panel) panel.innerHTML = renderCatPanelHtml(game);
+}
+
+// ── Drag reorder groups ──
+let _dragCatIdx = null, _dragCatGame = null;
+function catDragStart(e, ci, game){ _dragCatIdx=ci; _dragCatGame=game; e.dataTransfer.effectAllowed='move'; e.currentTarget.style.opacity='.4'; }
+function catDragOver(e){ e.preventDefault(); e.currentTarget.style.outline='2px solid #5046e4'; }
+function catDragLeave(e){ e.currentTarget.style.outline=''; }
+function catDrop(e, targetCi, game){
+  e.preventDefault(); e.currentTarget.style.outline=''; e.currentTarget.style.opacity='';
+  if(_dragCatIdx===null||_dragCatIdx===targetCi||_dragCatGame!==game){_dragCatIdx=null;return;}
+  const cats = GAME_CATS[game];
+  const moved = cats.splice(_dragCatIdx,1)[0];
+  cats.splice(targetCi,0,moved);
+  _dragCatIdx=null;
+  addLog(`调整了《${game}》日历分组顺序`);
+  showNotif('分组顺序已更新');
+  saveData(); refreshCatPanel();
+}
+
+// ── Edit cat name ──
+function showEditCatDialog(game, ci){
+  const cat = (GAME_CATS[game]||[])[ci]; if(!cat)return;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">修改分组名称</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">分组名称 <span class="req">*</span></div>
+      <input id="edit-cat-name" type="text" value="${cat.cat}">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doEditCat('${game}',${ci})">保存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{const el=document.getElementById('edit-cat-name');if(el){el.focus();el.select();}},50);
+}
+function doEditCat(game, ci){
+  const name = document.getElementById('edit-cat-name').value.trim();
+  if(!name){showNotif('分组名称不能为空',true);return;}
+  const cats = GAME_CATS[game]||[]; if(!cats[ci])return;
+  const old = cats[ci].cat;
+  cats[ci].cat = name;
+  addLog(`将《${game}》分组「${old}」改名为「${name}」`);
+  showNotif(`分组已改名为「${name}」`);
+  closeModal(); saveData(); refreshCatPanel();
+}
+
+// ── Add new group ──
+function showAddCatDialog(){
+  const sel=document.getElementById('cat-game-sel');
+  const game=sel?sel.value:calGame;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">新增分组 — ${game}</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">分组名称 <span class="req">*</span></div>
+      <input id="new-cat-name" type="text" placeholder="如：联运活动、赛事运营">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddCat('${game}')">确认新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('new-cat-name')?.focus(),50);
+}
+function doAddCat(game){
+  const name=document.getElementById('new-cat-name').value.trim();
+  if(!name){showNotif('分组名称不能为空',true);return;}
+  if(!GAME_CATS[game]) GAME_CATS[game]=[];
+  GAME_CATS[game].push({cat:name,rows:[]});
+  // Extend color arrays
+  const cc=GAME_CAT_COLORS[game]||[];
+  const ct=GAME_CAT_TEXT[game]||[];
+  const newBg=['#f3e8ff','#e0f2fe','#fef3c7','#f0fdf4','#fce7f3'][cc.length%5];
+  const newTc=['#6b21a8','#0369a1','#92400e','#166534','#9d174d'][ct.length%5];
+  GAME_CAT_COLORS[game]=[...cc,newBg];
+  GAME_CAT_TEXT[game]=[...ct,newTc];
+  addLog(`在《${game}》新增了分组「${name}」`);
+  showNotif(`分组「${name}」已新增`);
+  closeModal(); saveData(); refreshCatPanel();
+}
+
+// ── Delete group ──
+function confirmDeleteCat(game, ci){
+  const cat=(GAME_CATS[game]||[])[ci];if(!cat)return;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box">
+    <div class="confirm-title">确认删除分组</div>
+    <div class="confirm-desc">确定删除分组「${cat.cat}」吗？<br>${cat.rows.length>0?`<span style="color:#d93025">该分组包含 ${cat.rows.length} 个活动类型行，删除后这些行将不在日历中显示，但活动数据不会丢失。</span>`:'该分组为空。'}</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger" onclick="doDeleteCat('${game}',${ci})">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function doDeleteCat(game, ci){
+  const cats=GAME_CATS[game]||[];
+  const name=cats[ci]?.cat||'';
+  cats.splice(ci,1);
+  addLog(`删除了《${game}》分组「${name}」`);
+  showNotif(`分组「${name}」已删除`);
+  closeModal(); saveData(); refreshCatPanel();
+}
+
+// ── Add type to a group ──
+function showAddTypeToCatDialog(game, ci){
+  const cat=(GAME_CATS[game]||[])[ci];if(!cat)return;
+  const usedTypes=((GAME_CATS[game]||[]).flatMap(c=>c.rows.map(r=>r.label)));
+  const available=ACT_TYPES.filter(t=>!usedTypes.includes(t));
+  if(!available.length){showNotif('所有活动类型已分配到各分组',true);return;}
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:14px">添加活动类型到「${cat.cat}」</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">选择活动类型</div>
+      <select id="add-type-to-cat" size="${Math.min(available.length,6)}" style="width:100%">
+        ${available.map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="doAddTypeToCat('${game}',${ci})">添加</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function doAddTypeToCat(game, ci){
+  const t=document.getElementById('add-type-to-cat').value;
+  if(!t)return;
+  const cats=GAME_CATS[game]||[];
+  if(!cats[ci])return;
+  cats[ci].rows.push({label:t,types:[t]});
+  addLog(`将「${t}」添加到《${game}》分组「${cats[ci].cat}」`);
+  showNotif(`「${t}」已添加到分组「${cats[ci].cat}」`);
+  closeModal(); saveData(); refreshCatPanel();
+}
+
+// ── Move type between groups ──
+function showMoveTypeDialog(game, fromCi, rowIdx){
+  const cats=GAME_CATS[game]||[];
+  const cat=cats[fromCi];if(!cat)return;
+  const row=cat.rows[rowIdx];if(!row)return;
+  const targets=cats.map((c,i)=>i!==fromCi?`<option value="${i}">${c.cat}</option>`:'').join('');
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='modal-overlay';
+  ov.innerHTML=`<div class="confirm-box" style="width:400px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:6px">移动「${row.label}」到其他分组</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">当前分组：${cat.cat}</div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">目标分组</div>
+      <select id="move-target-cat" style="width:100%">
+        ${targets||`<option disabled>无其他分组</option>`}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn danger sm" style="margin-right:auto" onclick="doRemoveTypeFromCat('${game}',${fromCi},${rowIdx})">从分组中移除</button>
+      <button class="btn primary" onclick="doMoveType('${game}',${fromCi},${rowIdx})">移动</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function doMoveType(game, fromCi, rowIdx){
+  const toCi=parseInt(document.getElementById('move-target-cat').value);
+  const cats=GAME_CATS[game]||[];
+  const row=cats[fromCi].rows.splice(rowIdx,1)[0];
+  cats[toCi].rows.push(row);
+  addLog(`将「${row.label}」从《${game}》分组「${cats[fromCi].cat}」移至「${cats[toCi].cat}」`);
+  showNotif(`已移动到「${cats[toCi].cat}」`);
+  closeModal(); saveData(); refreshCatPanel();
+}
+function doRemoveTypeFromCat(game, ci, rowIdx){
+  const cats=GAME_CATS[game]||[];
+  const row=cats[ci].rows.splice(rowIdx,1)[0];
+  addLog(`从《${game}》分组「${cats[ci].cat}」移除了「${row.label}」`);
+  showNotif(`「${row.label}」已从分组移除（类型本身保留，仍可重新添加）`);
+  closeModal(); saveData(); refreshCatPanel();
+}
+// ===================== END CATEGORY GROUP MANAGEMENT =====================
+
+// Refresh only the cat panel in-place without full renderMain
+function refreshCatPanel(){
+  saveData();
+  const sel = document.getElementById('cat-game-sel');
+  const game = sel ? sel.value : calGame;
+  const panel = document.getElementById('cat-panel');
+  if(panel){
+    panel.innerHTML = renderCatPanelHtml(game);
+  } else {
+    // cat panel not visible — just save, no redraw needed
+  }
+  // Also silently refresh the calendar if it's currently visible
+  if(currentTab === 'calendar'){
+    const calContainer = document.getElementById('mainArea');
+    if(calContainer) renderCalendarView(calContainer);
+  }
+}
+
+function canUndoLog(log){
+  return currentUser.role==='admin' && !!log?.undo && !!log?.userId && log.userId!==currentUser.id && !log.undoMeta?.undoneAt;
+}
+
+function markLogUndone(log){
+  log.undoMeta = {
+    undoneAt: ts(),
+    undoneBy: currentUser.name
+  };
+}
+
+function undoLog(logId){
+  const log = opLogs.find(l=>l.id===logId);
+  if(!canUndoLog(log)){ showNotif('该日志当前不可撤销', true); return; }
+  const undo = log.undo || {};
+  try{
+    if(undo.kind === 'activity_create'){
+      const refSet = new Set(undo.refs || undo.ids || []);
+      activities = activities.filter(a=>!refSet.has(getActivityRef(a)) && !refSet.has(a.id));
+    }else if(undo.kind === 'activity_update'){
+      const before = normalizeActivity(undo.before);
+      const idx = findActivityIndexByRef(before?._akey || before?.id);
+      if(!before){ throw new Error('缺少原始活动数据'); }
+      if(idx >= 0) activities[idx] = before;
+      else activities.unshift(before);
+      ensureGameTypeVisible(before.game, before.type);
+    }else if(undo.kind === 'activity_delete'){
+      const deleted = normalizeActivity(undo.activity);
+      if(!deleted){ throw new Error('缺少已删除活动数据'); }
+      if(!activities.some(a=>a.id===deleted.id)) activities.unshift(deleted);
+      ensureGameTypeVisible(deleted.game, deleted.type);
+    }else{
+      throw new Error('暂不支持撤销该操作');
+    }
+    markLogUndone(log);
+    addLog(`撤销了 ${log.user} 的操作：${log.action}`);
+    stageLatestLocalSnapshot();
+    saveData();
+    renderMain();
+    showNotif('已撤销该操作');
+  }catch(e){
+    showNotif(`撤销失败：${e.message}`, true);
+  }
+}
+
+function ensureGameTypeVisible(game, type){
+  if(!game || !type) return;
+  if(!GAME_CATS[game]) GAME_CATS[game] = [];
+
+  const exists = (GAME_CATS[game] || []).some(cat =>
+    (cat.rows || []).some(row =>
+      row.label === type || (Array.isArray(row.types) && row.types.includes(type))
+    )
+  );
+  if(exists) return;
+
+  let fallbackIdx = (GAME_CATS[game] || []).findIndex(cat => cat.cat === '未分组活动');
+  if(fallbackIdx < 0){
+    GAME_CATS[game].push({cat:'未分组活动', rows:[]});
+    fallbackIdx = GAME_CATS[game].length - 1;
+
+    const cc = GAME_CAT_COLORS[game] || [];
+    const ct = GAME_CAT_TEXT[game] || [];
+    GAME_CAT_COLORS[game] = [...cc, '#f3f4f6'];
+    GAME_CAT_TEXT[game] = [...ct, '#6b7280'];
+  }
+
+  GAME_CATS[game][fallbackIdx].rows.push({label:type, types:[type]});
+}
+
+// ===================== LOGS =====================
+function renderLogsView(container){
+  container.innerHTML=`<div style="padding:20px;overflow-y:auto;height:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:16px">操作日志</div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      ${opLogs.map(l=>`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="font-size:12px;min-width:0">
+          <span style="font-weight:600">${l.user}</span> <span style="color:var(--text2)">${l.action}</span>
+          ${l.undoMeta?.undoneAt?`<div style="margin-top:4px;font-size:11px;color:#92400e">已由 ${l.undoMeta.undoneBy} 于 ${l.undoMeta.undoneAt} 撤销</div>`:''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          ${canUndoLog(l)?`<button class="btn sm" onclick="undoLog('${l.id}')">撤销</button>`:''}
+          <div style="font-size:11px;color:var(--text3)">${l.time}</div>
+        </div>
+      </div>`).join('')}
+      ${!opLogs.length?`<div style="padding:32px;text-align:center;color:var(--text3)">暂无操作日志</div>`:''}
+    </div>
+  </div>`;
+}
+
+// ===================== MODALS =====================
+function showModal(mode,id){
+  if(currentUser.role==='viewer'){showNotif('您没有编辑权限',true);return}
+  const a=id?findActivityByRef(id):null;
+  editingId=id||null;
+  const v=(f,d='')=>a?(a[f]||d):d;
+  const selectedGame = a?.game || calGame;
+  const selectedType = a?.type || ACT_TYPES[0] || '';
+  const selectedTriggerType = normalizeTriggerType(a?.triggerType);
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title">${mode==='edit'?'编辑活动':'新增活动'}</div>
+      <button class="close-x" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">竞品游戏 <span class="req">*</span></div>
+          <select id="f-game">${GAMES.map(g=>`<option ${selectedGame===g?'selected':''}>${g}</option>`).join('')}</select></div>
+        <div class="fg"><div class="flabel">活动类型 <span class="req">*</span></div>
+          <div class="type-search-wrap" id="type-search-wrap">
+            <input class="type-search-input" id="f-type-input" type="text" placeholder="搜索活动类型…" autocomplete="off"
+              value="${selectedType}" readonly
+              onclick="openTypeDropdown(event)"
+              oninput="filterTypeDropdown(this.value)">
+            <span class="type-search-arrow">▾</span>
+            <input type="hidden" id="f-type" value="${selectedType}">
+            <div class="type-search-dropdown" id="type-search-dropdown"></div>
+          </div></div>
+      </div>
+      <div class="fg full"><div class="flabel">活动名称 <span class="req">*</span></div>
+        <input id="f-name" type="text" placeholder="如：王者荣耀3月充值返利" value="${v('name')}"></div>
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">开始时间 <span class="req">*</span></div>
+          <input id="f-start" type="datetime-local" value="${v('startTime',(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}T10:00`;})())}"></div>
+        <div class="fg"><div class="flabel">结束时间 <span class="req">*</span></div>
+          <input id="f-end" type="datetime-local" value="${v('endTime',(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(new Date(n.getFullYear(),n.getMonth()+1,0).getDate()).padStart(2,'0')}T23:59`;})())}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">预热时间（可选）</div>
+          <input id="f-preheat" type="datetime-local" value="${v('preheat','').replace(' ','T')}"></div>
+        <div class="fg"><div class="flabel">数据来源 <span class="req">*</span></div>
+          <select id="f-source">${SOURCES.map(s=>`<option ${v('source')===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="fg full"><div class="flabel">触发条件</div>
+        <select id="f-trigger-type">${TRIGGER_TYPES.map(item=>`<option value="${item.value}" ${selectedTriggerType===item.value?'selected':''}>${item.label}</option>`).join('')}</select></div>
+      <div class="form-grid">
+        <div class="fg"><div class="flabel">活动渠道（Ctrl多选）<span class="req">*</span></div>
+          <select id="f-channels" multiple style="height:72px">${CHANNELS.map(c=>`<option ${v('channels',[]).includes(c)?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="fg"><div class="flabel">活动目标（Ctrl多选）</div>
+          <select id="f-goals" multiple style="height:72px">${TARGETS.map(t=>`<option ${v('goals',[]).includes(t)?'selected':''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div class="fg full"><div class="flabel">活动力度</div>
+        <input id="f-intensity" type="text" placeholder="如：充值100返20点券" value="${v('intensity')}"></div>
+      <div class="fg full"><div class="flabel">活动规则简述</div>
+        <textarea id="f-rules">${v('rules')}</textarea></div>
+      <div class="fg full"><div class="flabel">备注</div>
+        <textarea id="f-note" style="min-height:48px">${v('note')}</textarea></div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;cursor:pointer" onclick="document.getElementById('f-important').click()">
+        <input type="checkbox" id="f-important" ${v('important')?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:#f59e0b">
+        <span style="font-size:12px;font-weight:500;color:#713f12">⭐ 标记为重要活动</span>
+        <span style="font-size:11px;color:#92400e">（在日历和列表中会突出显示）</span>
+      </div>
+      ${mode==='add'?`
+      <div style="border:1px solid #e0e7ff;border-radius:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0f0ff;cursor:pointer" onclick="toggleCyclePanel()">
+          <input type="checkbox" id="f-cycle" style="width:15px;height:15px;cursor:pointer;accent-color:#5046e4" onchange="toggleCyclePanel()">
+          <span style="font-size:12px;font-weight:500;color:#3730a3">🔁 循环创建</span>
+          <span style="font-size:11px;color:#6366f1">勾选后可批量生成多个重复活动</span>
+        </div>
+        <div id="cycle-panel" style="display:none;padding:12px 14px;background:#fff;display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
+            <div class="fg">
+              <div class="flabel">间隔天数</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input id="f-cycle-gap" type="number" min="0" max="365" value="0" style="width:70px;text-align:center" oninput="updateCyclePreview()">
+                <span style="font-size:12px;color:var(--text2)">天（0=每天连续）</span>
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:3px">两次活动之间的间隔天数</div>
+            </div>
+            <div class="fg">
+              <div class="flabel">循环截止日期</div>
+              <input id="f-cycle-until" type="date" oninput="updateCyclePreview()">
+              <div style="font-size:10px;color:var(--text3);margin-top:3px">在此日期前创建，不超过50条</div>
+            </div>
+          </div>
+          <div id="cycle-preview" style="font-size:11px;color:#3730a3;background:#e0e7ff;padding:7px 10px;border-radius:5px">
+            请先填写活动开始/结束时间，再设置循环规则
+          </div>
+        </div>
+      </div>`:''}
+      <div style="font-size:11px;color:var(--text3);padding:7px 10px;background:var(--bg2);border-radius:5px">活动ID由系统自动生成 · 录入人/时间自动关联当前账号</div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="saveActivity()">保存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>initTypeSearchDropdown(document.getElementById('f-type')?.value||''),0);
+}
+
+function toggleCyclePanel(){
+  const cb=document.getElementById('f-cycle');
+  const panel=document.getElementById('cycle-panel');
+  if(!cb||!panel) return;
+  // clicking the parent div toggles the checkbox
+  if(event&&event.target&&event.target.id!=='f-cycle'){cb.checked=!cb.checked;}
+  panel.style.display=cb.checked?'block':'none';
+  if(cb.checked) updateCyclePreview();
+}
+
+function updateCyclePreview(){
+  const preview=document.getElementById('cycle-preview');
+  if(!preview) return;
+  const sVal=document.getElementById('f-start')?.value.replace('T',' ');
+  const eVal=document.getElementById('f-end')?.value.replace('T',' ');
+  const gap=parseInt(document.getElementById('f-cycle-gap')?.value)||0;
+  const until=document.getElementById('f-cycle-until')?.value;
+  if(!sVal||!eVal||!until){
+    preview.textContent='请填写开始/结束时间及循环截止日期';
+    return;
+  }
+  const sDate=new Date(sVal), eDate=new Date(eVal);
+  if(sDate>=eDate){preview.textContent='开始时间须早于结束时间';return;}
+  const dur=Math.ceil((eDate-sDate)/86400000); // activity duration in days
+  const step=dur+gap; // gap=0:seamless, gap=1:1 day between
+  const untilDate=new Date(until+'T23:59:59');
+  let count=0, cur=new Date(sDate);
+  while(cur<=untilDate&&count<50){count++;cur=new Date(cur.getTime()+step*86400000);}
+  const gapDesc=gap===0?'每天连续开启':`每次间隔 ${gap} 天`;
+  preview.innerHTML=`🔁 ${gapDesc}，每次活动持续 <strong>${dur}</strong> 天，截止 ${until} 共创建 <strong>${count}</strong> 条活动`;
+}
+
+// Generate a unique activity ID that works for any game/type name.
+// batchIds: array of IDs already created in the same batch (for cycle mode).
+function generateUniqueActId(g, t, dc, batchIds){
+  const gcMap={'王者荣耀':'WZRY','和平精英':'HPJY','原神':'YS','明日方舟':'MRF','崩坏：星穹铁道':'BHXQTD','第五人格':'DWRG','蛋仔派对':'DZPD'};
+  const tcMap={'充值返利':'RECHARGE','版本更新':'UPDATE','节日活动':'EVENT','赛事活动':'ESPORTS','福利发放':'WELFARE','跨界联动':'COLLAB','新服开放':'NEWSVR','限时折扣':'DISCOUNT'};
+  // Derive a short uppercase code from an arbitrary string.
+  // Prefers ASCII letters; falls back to a 4-digit hex hash of the first few CJK chars.
+  function abbr(str, fb){
+    if(!str) return fb;
+    const asc=str.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+    if(asc.length>=2) return asc.slice(0,8);
+    let h=0; Array.from(str).slice(0,4).forEach(c=>{h=(h*31+c.codePointAt(0))&0xFFFF;});
+    return h.toString(16).toUpperCase().padStart(4,'0');
+  }
+  const gCode=gcMap[g]||abbr(g,'GAME');
+  const tCode=tcMap[t]||abbr(t,'ACT');
+  const prefix=`${gCode}-${tCode}-${dc}-`;
+  // Find max existing seq across ALL activity IDs with this prefix (including current batch).
+  let maxSeq=0;
+  const allIds=activities.map(a=>a.id).concat(batchIds||[]);
+  allIds.forEach(id=>{
+    if(id&&id.startsWith(prefix)){
+      const n=parseInt(id.slice(prefix.length))||0;
+      if(n>maxSeq) maxSeq=n;
+    }
+  });
+  return `${prefix}${String(maxSeq+1).padStart(3,'0')}`;
+}
+
+function saveActivity(){
+  const g=document.getElementById('f-game').value;
+  const t=document.getElementById('f-type').value;
+  const n=document.getElementById('f-name').value.trim();
+  const s=document.getElementById('f-start').value.replace('T',' ');
+  const e=document.getElementById('f-end').value.replace('T',' ');
+  const ph=document.getElementById('f-preheat').value.replace('T',' ');
+  const src=document.getElementById('f-source').value;
+  const channels=[...document.getElementById('f-channels').selectedOptions].map(o=>o.value);
+  const goals=[...document.getElementById('f-goals').selectedOptions].map(o=>o.value);
+  const intensity=document.getElementById('f-intensity').value;
+  const rules=document.getElementById('f-rules').value;
+  const note=document.getElementById('f-note').value;
+  const triggerType=normalizeTriggerType(document.getElementById('f-trigger-type')?.value);
+  const important=document.getElementById('f-important').checked;
+  if(!n){showNotif('活动名称不能为空',true);return}
+  if(!s||!e){showNotif('时间不能为空',true);return}
+  if(new Date(s)>new Date(e)){showNotif('结束时间不能早于开始时间，请修改',true);return}
+  if(!channels.length){showNotif('请至少选择一个活动渠道',true);return}
+
+  const now=ts();
+
+  if(editingId){
+    // Edit mode — single update
+    const idx=findActivityIndexByRef(editingId);
+    if(idx>=0){
+      const before = deepClone(activities[idx]);
+      ensureGameTypeVisible(g, t);
+      activities[idx]=normalizeActivity({...activities[idx],game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,modifier:currentUser.name,modifyTime:now});
+      addLog(`修改了《${g}》${n}`, {undo:{kind:'activity_update', before}});
+      showNotif(`修改成功：${n}`);
+    }
+    stageLatestLocalSnapshot(); // immediate local save
+    saveData();                 // async cloud sync (also re-saves locally after merge)
+    activeGameFilter='all';
+    activeTypeFilter='all';
+    persistUiState();
+    closeModal();renderMain();
+    return;
+  }
+
+  // Check cycle mode
+  const cycleOn = document.getElementById('f-cycle')?.checked;
+  const gap     = parseInt(document.getElementById('f-cycle-gap')?.value)||0;
+  const until   = document.getElementById('f-cycle-until')?.value;
+
+  if(cycleOn && until){
+    // Batch cycle creation
+    ensureGameTypeVisible(g, t);
+    const sDate    = new Date(s);
+    const eDate    = new Date(e);
+    const dur      = Math.ceil((eDate-sDate)/86400000);
+    const step     = dur+gap; // gap=0:seamless, gap=1:1 day between
+    const untilDate= new Date(until+'T23:59:59');
+    const phOffset = ph ? (new Date(s)-new Date(ph)) : null; // preheat offset in ms
+
+    // Helper: add days to a datetime string "YYYY-MM-DD HH:MM"
+    function shiftDateStr(dateStr, daysOffset){
+      if(!dateStr) return dateStr;
+      const d=new Date(dateStr);
+      d.setDate(d.getDate()+daysOffset);
+      const pad=v=>String(v).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    let created=0, curShift=0;
+    const newItems=[];
+    while(true){
+      const cycleStart=new Date(sDate.getTime()+curShift*86400000);
+      if(cycleStart>untilDate || created>=50) break;
+      const dc=cycleStart.toISOString().split('T')[0].replace(/-/g,'');
+      const newId=generateUniqueActId(g, t, dc, newItems.map(i=>i.id));
+      const newStart=shiftDateStr(s, curShift);
+      const newEnd  =shiftDateStr(e, curShift);
+      const newPh   =ph&&phOffset!==null ? shiftDateStr(ph, curShift) : ph;
+      newItems.push(normalizeActivity({id:newId,game:g,type:t,name:n,startTime:newStart,endTime:newEnd,preheat:newPh,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now}));
+      created++;
+      curShift+=step;
+    }
+    // Insert all at front
+    activities.unshift(...newItems.reverse());
+    addLog(`循环创建了 ${created} 条《${g}》${t} · ${n}（间隔${gap}天）`, {undo:{kind:'activity_create', refs:newItems.map(item=>getActivityRef(item))}});
+    showNotif(`循环创建成功：共生成 ${created} 条活动`);
+  } else {
+    // Single creation
+    ensureGameTypeVisible(g, t);
+    const dc=s.split(' ')[0].replace(/-/g,'');
+    const newId=generateUniqueActId(g, t, dc, []);
+    const createdActivity = normalizeActivity({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
+    activities.unshift(createdActivity);
+    addLog(`新增了《${g}》${n}`, {undo:{kind:'activity_create', refs:[getActivityRef(createdActivity)]}});
+    showNotif(`新增成功：《${g}》${t} · ${n}`);
+  }
+
+  stageLatestLocalSnapshot(); // immediate local save
+  saveData();                 // async cloud sync
+  activeGameFilter='all';
+  activeTypeFilter='all';
+  calGame=g;currentTab='calendar';
+  persistUiState();
+  document.querySelectorAll('.nav-tab').forEach((tb,i)=>tb.classList.toggle('active',i===1));
+  closeModal();renderMain();
+}
+
+function showDetail(id){
+  const a=findActivityByRef(id);if(!a)return;
+  const st=getStatus(a);
+  const c=TYPE_COLORS[a.type]||{bg:'#f3f4f6',text:'#6b7280'};
+  const actId=a.id;
+  const atts=attachments[actId]||[];
+  const canEdit=currentUser.role!=='viewer';
+
+  function attThumb(att){
+    if(att.type==='image') return `<img class="attach-thumb" src="${att.data}" onclick="openLightbox('${actId}','${att.id}')" alt="${att.name}">`;
+    if(att.type==='video') return `<div class="attach-thumb-vid" onclick="openLightbox('${actId}','${att.id}')">▶</div>`;
+    return `<div class="attach-thumb-vid" onclick="openLightbox('${actId}','${att.id}')">🔗</div>`;
+  }
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='modal-overlay';
+  ov.innerHTML=`<div class="modal" style="width:720px">
+    <div class="modal-hd">
+      <div>
+        <div class="modal-title">${a.important?'⭐ ':''}${a.name}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.id}${a.important?'&nbsp;&nbsp;<span style="background:#fef9c3;color:#713f12;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:500">重要活动</span>':''}</div>
+      </div>
+      <button class="close-x" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <span class="tag" style="background:${c.bg};color:${c.text}">${a.type}</span>
+        <span class="tag" style="background:#eef2ff;color:#4338ca">${getTriggerLabel(a.triggerType)}</span>
+        <span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span>
+        ${a.channels.map(ch=>`<span class="tag" style="background:#f3f4f6;color:#374151">${ch}</span>`).join('')}
+        ${(a.goals||[]).map(g=>`<span class="tag" style="background:#dbeafe;color:#1d4ed8">${g}</span>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+        ${[['竞品游戏',a.game],['活动类型',a.type],['开始时间',a.startTime],['结束时间',a.endTime],
+           ['预热时间',a.preheat||'无'],['触发条件',getTriggerLabel(a.triggerType)],['活动周期',getDur(a)+'天'],['数据来源',a.source],['录入人',a.creator]
+          ].map(([l,v])=>`<div><div style="font-size:11px;color:var(--text3)">${l}</div><div style="margin-top:2px">${v}</div></div>`).join('')}
+      </div>
+      ${a.intensity?`<div><div style="font-size:11px;color:var(--text3)">活动力度</div><div style="margin-top:3px">${a.intensity}</div></div>`:''}
+      ${a.rules?`<div><div style="font-size:11px;color:var(--text3)">活动规则简述</div><div style="margin-top:3px;font-size:12px;color:var(--text2);line-height:1.7;background:var(--bg2);padding:10px;border-radius:5px;white-space:pre-wrap;word-break:break-word">${a.rules.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:''}
+      ${a.note?`<div><div style="font-size:11px;color:var(--text3)">备注</div><div style="margin-top:3px;font-size:12px;color:var(--text2)">${a.note}</div></div>`:''}
+
+      <!-- ── ATTACHMENTS ── -->
+      <div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+          <span>附件 · 图片 / 视频 <span style="font-weight:400;color:var(--text3)">(${atts.length})</span></span>
+          ${canEdit?`<button class="btn sm" onclick="showAddVideoUrl('${actId}')">+ 粘贴视频链接</button>`:''}
+        </div>
+        ${canEdit?`<div class="attach-zone" id="dropzone-${actId}" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${actId}')">
+          <input type="file" accept="image/*,video/*" multiple onchange="onFileSelect(event,'${actId}')">
+          <div style="pointer-events:none">
+            <div style="font-size:20px;margin-bottom:6px">📎</div>
+            <div style="font-size:12px;color:var(--text2)">点击选择 或 拖拽图片/视频文件到此处</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:3px">支持 JPG/PNG/GIF/MP4/MOV 等，单文件最大 5MB</div>
+          </div>
+        </div>`:''}
+        <div class="attach-list" id="attach-list-${actId}">
+          ${atts.map(att=>`
+            <div class="attach-item" id="att-${att.id}">
+              ${attThumb(att)}
+              <div class="attach-info">
+                <div class="attach-name" title="${att.name}">${att.name}</div>
+                <div class="attach-size">${att.type==='video_url'?'视频链接':formatSize(att.size||0)} · ${att.addedBy} · ${att.addedAt}</div>
+              </div>
+              ${canEdit?`<button class="attach-del" onclick="deleteAttachment('${actId}','${att.id}')" title="删除">✕</button>`:''}
+            </div>`).join('')}
+          ${!atts.length&&!canEdit?`<div style="color:var(--text3);font-size:12px;padding:8px 0">暂无附件</div>`:''}
+        </div>
+      </div>
+      <!-- ── END ATTACHMENTS ── -->
+
+      <div style="font-size:11px;color:var(--text3);padding-top:8px;border-top:1px solid var(--border)">最后修改：${a.modifier} · ${a.modifyTime}</div>
+    </div>
+    <div class="modal-ft">
+      ${canEdit?`<button class="btn danger" style="margin-right:auto" onclick="closeModal();confirmDelete('${getActivityRef(a)}')">删除</button>`:''}
+      <button class="btn" onclick="closeModal()">关闭</button>
+      ${canEdit?`<button class="btn" onclick="closeModal();copyActivity('${getActivityRef(a)}')">复制活动</button>`:''}
+      ${canEdit?`<button class="btn primary" onclick="closeModal();showModal('edit','${getActivityRef(a)}')">编辑</button>`:''}
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  // Bind paste-to-upload on the detail modal
+  if(canEdit){
+    const _pasteHandler = async (e) => {
+      const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+      if(!items) return;
+      const imageItems = [...items].filter(it => it.type.startsWith('image/'));
+      if(!imageItems.length) return;
+      e.preventDefault();
+      showNotif('正在处理粘贴的图片…');
+      for(const item of imageItems){
+        const file = item.getAsFile();
+        if(file) await processFiles([file], actId);
+      }
+    };
+    document.addEventListener('paste', _pasteHandler);
+    // Remove handler when modal closes
+    const _origClose = window.closeModal;
+    const _onceClose = () => {
+      document.removeEventListener('paste', _pasteHandler);
+      window.closeModal = _origClose;
+    };
+    const origCloseModal = window.closeModal;
+    window.closeModal = function(){ _onceClose(); origCloseModal.apply(this, arguments); };
+
+    // Also show paste hint on dropzone
+    setTimeout(()=>{
+      const dz = document.getElementById('dropzone-' + actId);
+      if(dz){
+        const hint = dz.querySelector('div[style*="pointer-events:none"]');
+        if(hint){
+          const p = document.createElement('div');
+          p.style.cssText = 'font-size:10px;color:var(--text3);margin-top:4px';
+          p.textContent = '也可直接 Ctrl+V 粘贴图片';
+          hint.appendChild(p);
+        }
+      }
+    }, 0);
+  }
+}
+
+// ===================== MEDIA / ATTACHMENTS =====================
+function formatSize(bytes){
+  if(!bytes) return '';
+  if(bytes<1024) return bytes+'B';
+  if(bytes<1024*1024) return Math.round(bytes/1024)+'KB';
+  return (bytes/1024/1024).toFixed(1)+'MB';
+}
+
+function genAttId(){return 'att_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)}
+
+// Drag-and-drop handlers
+function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over')}
+function onDragLeave(e){e.currentTarget.classList.remove('drag-over')}
+function onDrop(e,actId){
+  e.preventDefault();e.currentTarget.classList.remove('drag-over');
+  processFiles([...e.dataTransfer.files], actId);
+}
+function onFileSelect(e,actId){processFiles([...e.target.files], actId);e.target.value='';}
+
+// ─── Supabase Storage helpers ───
+// Images are uploaded to Supabase Storage bucket 'media'
+// Path: {game}/{type}/{attId}_{filename}
+// att.data stores the public URL (not base64) when Storage is available
+
+const STORAGE_BUCKET = 'media';
+
+function storageUrl(path){
+  return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
+}
+
+async function uploadToStorage(path, blob, mimeType){
+  const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + _sbKey,
+      'Content-Type': mimeType,
+      'x-upsert': 'true'
+    },
+    body: blob
+  });
+  if(!r.ok){ const t=await r.text(); throw new Error(`Storage 上传失败 ${r.status}: ${t.slice(0,100)}`); }
+  return storageUrl(path);
+}
+
+async function deleteFromStorage(path){
+  if(!path || !_sbUrl || !_sbKey) return;
+  await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + _sbKey }
+  }).catch(()=>{});
+}
+
+// ─── Image compression ───
+// Compress image to max 100KB using canvas
+async function compressImage(file){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      const TARGET = 80 * 1024; // 80KB target
+
+      const tryWithDim = (maxDim, quality) => new Promise(res=>{
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(res, 'image/jpeg', quality);
+      });
+
+      (async ()=>{
+        // Try progressively smaller dimensions + lower quality
+        const attempts = [
+          { maxDim: 800, quality: 0.7 },
+          { maxDim: 600, quality: 0.6 },
+          { maxDim: 480, quality: 0.5 },
+          { maxDim: 360, quality: 0.4 },
+          { maxDim: 320, quality: 0.3 },
+          { maxDim: 240, quality: 0.2 },
+          { maxDim: 200, quality: 0.15 },
+          { maxDim: 160, quality: 0.1 },
+        ];
+        let bestBlob = null;
+        for(const {maxDim, quality} of attempts){
+          const blob = await tryWithDim(maxDim, quality);
+          if(!bestBlob) bestBlob = blob;
+          if(blob && blob.size <= TARGET){ resolve(blob); return; }
+          if(blob && blob.size < (bestBlob?.size||Infinity)) bestBlob = blob;
+        }
+        resolve(bestBlob); // best effort — smallest we could get
+      })();
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+// ─── Process uploaded files ───
+async function processFiles(files, actId){
+  const MAX = 50 * 1024 * 1024; // 50MB limit for videos
+  const act = activities.find(a=>a.id===actId);
+  const game = act?.game||'未知游戏';
+  const type = act?.type||'未知类型';
+
+  let uploaded = 0;
+  const total = files.filter(f=>f.type.startsWith('image/')||f.type.startsWith('video/')).length;
+  if(!total){ showNotif('没有可用的图片或视频文件',true); return; }
+
+  showNotif(`正在处理 ${total} 个文件…`);
+
+  for(const file of files){
+    const isImg = file.type.startsWith('image/');
+    const isVid = file.type.startsWith('video/');
+    if(!isImg && !isVid){ showNotif(`「${file.name}」不是图片或视频，已跳过`,true); continue; }
+    if(file.size > MAX){ showNotif(`「${file.name}」超过50MB限制，已跳过`,true); continue; }
+
+    const attId = genAttId();
+    let attData = null;
+    let attSize = file.size;
+    let attType = isImg ? 'image' : 'video';
+
+    if(isImg){
+      // Compress image to ≤100KB
+      const compressed = await compressImage(file);
+      if(!compressed){ showNotif(`「${file.name}」压缩失败，已跳过`,true); continue; }
+      attSize = compressed.size;
+
+      if(_sbReady && _sbUrl && _sbKey){
+        // Upload to Supabase Storage
+        try{
+          const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
+          const path = `${game}/${type}/${attId}_${safeName}`;
+          attData = await uploadToStorage(path, compressed, 'image/jpeg');
+          // Store path for deletion later
+          const att = { id:attId, name:file.name, type:'image', size:attSize,
+                        data:attData, storagePath:path, addedBy:currentUser.name, addedAt:ts() };
+          if(!attachments[actId]) attachments[actId]=[];
+          attachments[actId].push(att);
+          refreshAttachList(actId);
+          // Save metadata to database (URL, not base64)
+          saveAttachmentsFor(actId);
+          uploaded++;
+          if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至80KB以内）`);
+          continue;
+        }catch(e){
+          console.warn('Storage upload failed, falling back to base64', e);
+          showNotif(`图片上传云端失败，改用本地存储: ${e.message}`, true);
+          // Fall through to base64 fallback
+        }
+      }
+      // Fallback: store as base64 (localStorage only)
+      const reader = new FileReader();
+      await new Promise(resolve=>{
+        reader.onload = ev=>{
+          attData = ev.target.result;
+          resolve();
+        };
+        reader.readAsDataURL(compressed);
+      });
+    } else {
+      // Video: read as base64 (or could upload to storage too)
+      const reader = new FileReader();
+      await new Promise(resolve=>{
+        reader.onload = ev=>{ attData = ev.target.result; resolve(); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const att = { id:attId, name:file.name, type:attType,
+                  size:attSize, data:attData, addedBy:currentUser.name, addedAt:ts() };
+    if(!attachments[actId]) attachments[actId]=[];
+    attachments[actId].push(att);
+    refreshAttachList(actId);
+    saveAttachmentsFor(actId);
+    uploaded++;
+    if(uploaded===total) showNotif(`成功添加 ${uploaded} 个附件`);
+  }
+}
+
+function showAddVideoUrl(actId){
+  const ov2=document.createElement('div');
+  ov2.className='modal-overlay';ov2.id='url-modal';ov2.style.zIndex='1100';
+  ov2.innerHTML=`<div class="confirm-box" style="width:440px;text-align:left">
+    <div class="confirm-title" style="margin-bottom:12px">粘贴视频链接</div>
+    <div class="fg full" style="margin-bottom:6px">
+      <div class="flabel">视频 URL</div>
+      <input id="vid-url-input" type="url" placeholder="https://...（B站/YouTube/MP4直链 均可）">
+    </div>
+    <div class="fg full" style="margin-bottom:16px">
+      <div class="flabel">备注名称（可选）</div>
+      <input id="vid-url-name" type="text" placeholder="如：活动宣传片">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="document.getElementById('url-modal').remove()">取消</button>
+      <button class="btn primary" onclick="doAddVideoUrl('${actId}')">添加</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov2);
+  setTimeout(()=>document.getElementById('vid-url-input')?.focus(),50);
+}
+
+function doAddVideoUrl(actId){
+  const url=document.getElementById('vid-url-input').value.trim();
+  const name=document.getElementById('vid-url-name').value.trim()||url.split('/').pop()||'视频链接';
+  if(!url){showNotif('请输入视频链接',true);return;}
+  const att={id:genAttId(),name,type:'video_url',size:0,data:url,addedBy:currentUser.name,addedAt:ts()};
+  if(!attachments[actId]) attachments[actId]=[];
+  attachments[actId].push(att);
+  document.getElementById('url-modal')?.remove();
+  refreshAttachList(actId);
+  saveAttachmentsFor(actId);
+  showNotif('视频链接已添加');
+}
+
+function deleteAttachment(actId, attId){
+  if(!attachments[actId]) return;
+  const att = attachments[actId].find(x=>x.id===attId);
+  attachments[actId]=attachments[actId].filter(x=>x.id!==attId);
+  if(!attachments[actId].length) delete attachments[actId];
+  // Delete from Storage if it was uploaded there
+  if(att && att.storagePath && _sbReady && _sbUrl && _sbKey){
+    deleteFromStorage(att.storagePath).catch(()=>{});
+  }
+  refreshAttachList(actId);
+  saveAttachmentsFor(actId);
+  showNotif('附件已删除');
+}
+
+function refreshAttachList(actId){
+  const el=document.getElementById(`attach-list-${actId}`);
+  if(!el) return;
+  const atts=attachments[actId]||[];
+  const canEdit=currentUser.role!=='viewer';
+  el.innerHTML=atts.map(att=>`
+    <div class="attach-item" id="att-${att.id}">
+      ${att.type==='image'
+        ?`<img class="attach-thumb" src="${att.data}" onclick="openLightbox('${actId}','${att.id}')" alt="${att.name}">`
+        :`<div class="attach-thumb-vid" onclick="openLightbox('${actId}','${att.id}')">${att.type==='video_url'?'🔗':'▶'}</div>`}
+      <div class="attach-info">
+        <div class="attach-name" title="${att.name}">${att.name}</div>
+        <div class="attach-size">${att.type==='video_url'?'视频链接':formatSize(att.size)} · ${att.addedBy} · ${att.addedAt}</div>
+      </div>
+      ${canEdit?`<button class="attach-del" onclick="deleteAttachment('${actId}','${att.id}')" title="删除">✕</button>`:''}
+    </div>`).join('')||
+    (!canEdit?`<div style="color:var(--text3);font-size:12px;padding:8px 0">暂无附件</div>`:'');
+}
+
+// ─── Lightbox ───
+let _lbActId='', _lbIdx=0;
+function openLightbox(actId, attId){
+  const atts=attachments[actId]||[];
+  const idx=atts.findIndex(x=>x.id===attId);
+  if(idx<0) return;
+  _lbActId=actId; _lbIdx=idx;
+  _renderLightbox();
+}
+
+function _renderLightbox(){
+  document.getElementById('lightbox-el')?.remove();
+  const atts=attachments[_lbActId]||[];
+  const att=atts[_lbIdx]; if(!att) return;
+  const lb=document.createElement('div');
+  lb.className='lightbox'; lb.id='lightbox-el';
+  lb.onclick=e=>{if(e.target===lb)lb.remove()};
+
+  let mediaHtml='';
+  if(att.type==='image'){
+    mediaHtml=`<img src="${att.data}" alt="${att.name}">`;
+  } else if(att.type==='video'){
+    mediaHtml=`<video src="${att.data}" controls autoplay style="max-width:92vw;max-height:80vh;border-radius:8px"></video>`;
+  } else {
+    mediaHtml=`<div style="background:#fff;border-radius:8px;padding:28px 32px;text-align:center;max-width:420px">
+      <div style="font-size:32px;margin-bottom:12px">🔗</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">${att.name}</div>
+      <a href="${att.data}" target="_blank" style="color:#5046e4;font-size:13px;word-break:break-all">${att.data}</a>
+      <div style="margin-top:14px"><a href="${att.data}" target="_blank" class="btn primary" style="text-decoration:none;display:inline-block">在新标签页打开</a></div>
+    </div>`;
+  }
+
+  const canEdit=currentUser.role!=='viewer';
+  const deleteBtn = canEdit
+    ? `<button onclick="lbDeleteCurrent()" style="background:rgba(217,48,37,.75);border:none;color:#fff;padding:6px 18px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:500;transition:background .15s" onmouseover="this.style.background='rgba(217,48,37,1)'" onmouseout="this.style.background='rgba(217,48,37,.75)'">🗑 删除</button>`
+    : '';
+
+  lb.innerHTML=`
+    <button class="lightbox-close" onclick="document.getElementById('lightbox-el').remove()">✕</button>
+    ${mediaHtml}
+    <div class="lightbox-caption">${att.name} · ${att.addedBy} · ${att.addedAt}</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      ${atts.length>1?`<div class="lightbox-nav">
+        <button onclick="_lbIdx=(_lbIdx-1+${atts.length})%${atts.length};_renderLightbox()">‹ 上一张</button>
+        <span style="color:#9ca3af;font-size:12px;align-self:center">${_lbIdx+1} / ${atts.length}</span>
+        <button onclick="_lbIdx=(_lbIdx+1)%${atts.length};_renderLightbox()">下一张 ›</button>
+      </div>`:''}
+      ${deleteBtn}
+    </div>`;
+  document.body.appendChild(lb);
+}
+
+function lbDeleteCurrent(){
+  const actId = _lbActId;
+  const atts = attachments[actId]||[];
+  const att = atts[_lbIdx];
+  if(!att) return;
+
+  // 二次确认弹窗
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'lb-del-confirm';
+  ov.style.zIndex = '3000'; // above lightbox (z-index:2000)
+  ov.innerHTML = `<div class="confirm-box">
+    <div class="confirm-title">确认删除图片</div>
+    <div class="confirm-desc" style="word-break:break-all">确定要删除「${att.name}」吗？<br>此操作不可撤销。</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="document.getElementById('lb-del-confirm').remove()">取消</button>
+      <button class="btn danger" onclick="lbDeleteConfirmed('${actId}','${att.id}')">确认删除</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function lbDeleteConfirmed(actId, attId){
+  document.getElementById('lb-del-confirm')?.remove();
+  deleteAttachment(actId, attId);
+  // Close lightbox if no more images, else re-render with updated index
+  const remaining = attachments[actId]||[];
+  if(!remaining.length){
+    document.getElementById('lightbox-el')?.remove();
+    if(currentTab==='media') renderMain();
+    return;
+  }
+  if(_lbIdx >= remaining.length) _lbIdx = remaining.length - 1;
+  _renderLightbox();
+  if(currentTab==='media') setTimeout(()=>{
+    const container = document.getElementById('mainArea');
+    if(container) renderMediaView(container);
+  }, 0);
+}
+
+// ─── Media Library View ───
+function renderMediaView(container){
+  const allGames=['all',...GAMES];
+
+  // Build items list
+  const allItems=[];
+  Object.entries(attachments).forEach(([actId,atts])=>{
+    const act=activities.find(a=>a.id===actId);
+    atts.forEach(att=>allItems.push({att,act,actId}));
+  });
+
+  // Filter by game
+  const gameFiltered = mediaGame==='all'
+    ? allItems
+    : allItems.filter(({act})=>act&&act.game===mediaGame);
+
+  // Collect types present in gameFiltered
+  const presentTypes=[];
+  ACT_TYPES.forEach(t=>{ if(gameFiltered.some(({act})=>act&&act.type===t)) presentTypes.push(t); });
+  gameFiltered.forEach(({act})=>{ if(act&&!ACT_TYPES.includes(act.type)&&!presentTypes.includes(act.type)) presentTypes.push(act.type); });
+
+  // Reset filter if it no longer exists
+  if(mediaTypeFilter!=='all'&&!presentTypes.includes(mediaTypeFilter)) mediaTypeFilter='all';
+
+  // Filter by type
+  const filteredItems = mediaTypeFilter==='all'
+    ? gameFiltered
+    : gameFiltered.filter(({act})=>act&&act.type===mediaTypeFilter);
+
+  // Count per game
+  const gameCounts={all:allItems.length};
+  GAMES.forEach(g=>{gameCounts[g]=allItems.filter(({act})=>act&&act.game===g).length;});
+
+  // Game tabs
+  const tabs=allGames.map(g=>`<div class="media-game-tab ${mediaGame===g?'active':''}" onclick="mediaGame='${g}';mediaTypeFilter='all';renderMain()">${g==='all'?'全部游戏':g} <span style="opacity:.7">${gameCounts[g]||0}</span></div>`).join('');
+
+  // Type filter chips
+  const typeChipAll=`<div class="media-type-chip ${mediaTypeFilter==='all'?'active':''}" onclick="mediaTypeFilter='all';renderMain()">全部类型 <span style="opacity:.7">${gameFiltered.length}</span></div>`;
+  const typeChips=presentTypes.map(t=>{
+    const c=TYPE_COLORS[t]||{bg:'#e5e7eb',border:'#9ca3af',text:'#374151'};
+    const cnt=gameFiltered.filter(({act})=>act&&act.type===t).length;
+    const isActive=mediaTypeFilter===t;
+    return `<div class="media-type-chip ${isActive?'active':''}" onclick="mediaTypeFilter='${t}';renderMain()">
+      <span class="chip-dot" style="background:${isActive?'rgba(255,255,255,.7)':c.bg};border:1px solid ${isActive?'rgba(255,255,255,.4)':c.border||c.bg}"></span>
+      ${t} <span style="opacity:.7">${cnt}</span>
+    </div>`;
+  }).join('');
+
+  // Activity TYPE options for paste selector
+  const pasteTypeOptions = [
+    ...ACT_TYPES.filter(t=> activities.some(a=>(mediaGame==='all'||a.game===mediaGame)&&a.type===t)),
+    ...Array.from(new Set(activities.filter(a=>mediaGame==='all'||a.game===mediaGame).map(a=>a.type))).filter(t=>!ACT_TYPES.includes(t))
+  ].map(t=>`<option value="${t}">${t}</option>`).join('');
+
+  // Paste zone (only for editors/admins)
+  const canEdit=currentUser.role!=='viewer';
+  const pasteZoneHtml = false ? `
+    <div class="media-upload-zone" id="media-paste-zone">
+      <div class="media-upload-droparea" id="media-droparea">
+        <input type="file" id="media-file-input" accept="image/*" multiple style="display:none" onchange="mediaFileSelected(event)">
+        <div class="media-upload-drop-icon">🖼</div>
+        <div class="media-upload-drop-main">拖拽图片到此处，或</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;justify-content:center">
+          <button class="btn sm primary" onclick="document.getElementById('media-file-input').click()" style="font-size:11px">选择文件上传</button>
+          <span style="font-size:11px;color:var(--text3)">· 或 <strong>Ctrl+V</strong> 粘贴截图</span>
+        </div>
+        <div class="media-upload-drop-sub">支持 JPG / PNG / GIF，可多选，单文件最大 5MB</div>
+      </div>
+      <div class="media-upload-side">
+        <div style="font-size:11px;color:var(--text3);font-weight:500;margin-bottom:4px">目标活动类型 <span style="color:#d93025">*</span></div>
+        <select class="media-act-selector" id="media-paste-type-select" onchange="mediaPasteType=this.value" style="width:100%;max-width:100%">
+          <option value="">— 请选择类型 —</option>
+          ${pasteTypeOptions}
+        </select>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5">自动归属到该类型<br>下最近的活动</div>
+      </div>
+    </div>` : '';
+
+  // Group by type for display
+  const typeGroups={};
+  filteredItems.forEach(item=>{
+    const typeName=item.act?item.act.type:'未知类型';
+    if(!typeGroups[typeName]) typeGroups[typeName]=[];
+    typeGroups[typeName].push(item);
+  });
+  const sortedTypes=[...ACT_TYPES.filter(t=>typeGroups[t]),...Object.keys(typeGroups).filter(t=>!ACT_TYPES.includes(t))];
+
+  const mediaCardHtml=({att,act,actId})=>`
+    <div class="media-card" onclick="openLightboxFromMedia('${actId}','${att.id}')">
+      ${att.type==='image'
+        ?`<img src="${att.data}" alt="${att.name}" loading="lazy" style="width:150px;height:auto;min-height:80px;max-height:350px;object-fit:cover;display:block;background:var(--bg2)">`
+        :`<div class="media-thumb-video">${att.type==='video_url'?'🔗':'▶'}</div>`}
+      <div class="media-card-body">
+        <div class="media-card-name" title="${att.name}">${att.name}</div>
+        <div class="media-card-meta">${act?act.name:'未知活动'}</div>
+        <div class="media-card-meta">${att.addedBy} · ${att.addedAt.split(' ')[0]}</div>
+      </div>
+    </div>`;
+
+  const groupedHtml = filteredItems.length===0
+    ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:12px;padding:40px">
+        <div style="font-size:40px">🖼</div>
+        <div style="font-size:14px">${mediaTypeFilter==='all'?'暂无媒体文件':'该类型暂无媒体文件'}</div>
+        <div style="font-size:12px">${mediaTypeFilter==='all'?'在活动详情页上传图片后会在这里显示':'切换类型查看其他图片，或使用上方粘贴区上传'}</div>
+      </div>`
+    : `<div style="padding:16px;overflow-y:auto;flex:1">
+        ${sortedTypes.map(type=>{
+          const c=TYPE_COLORS[type]||{bg:'#f3f4f6',text:'#6b7280'};
+          const items=typeGroups[type];
+          return `<div class="media-type-section">
+            <div class="media-type-hd">
+              <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c.bg};border:1px solid ${c.border||c.bg}"></span>
+              ${type}
+              <span style="font-weight:400;color:var(--text3)">${items.length} 个文件</span>
+            </div>
+            <div class="media-grid" style="padding:0">
+              ${items.map(mediaCardHtml).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+
+  container.innerHTML=`<div class="media-view">
+    <div class="media-toolbar">
+      <div style="font-size:13px;font-weight:600">媒体库</div>
+      <div class="media-game-tabs">${tabs}</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:var(--text3)">${filteredItems.length} 个文件</span>
+        ${filteredItems.filter(({att})=>att.type==='image').length>0
+          ?`<button class="btn sm" onclick="exportAllImages('${mediaGame}')" style="font-size:11px;white-space:nowrap">
+              ⬇ 导出图片（${filteredItems.filter(({att})=>att.type==='image').length}张）
+            </button>`
+          :''}
+      </div>
+    </div>
+    <div class="media-type-bar">
+      ${typeChipAll}
+      ${typeChips}
+    </div>
+    ${pasteZoneHtml}
+    ${groupedHtml}
+  </div>`;
+
+  // Init paste zone
+  // initMediaPasteZone(); // disabled
+}
+
+// ===================== MEDIA UPLOAD ZONE (drag + file + paste) =====================
+function initMediaPasteZone(){
+  const zone     = document.getElementById('media-paste-zone');
+  const droparea = document.getElementById('media-droparea');
+  if(!zone || !droparea) return;
+
+  // Restore previously selected type
+  const sel = document.getElementById('media-paste-type-select');
+  if(sel && mediaPasteType) sel.value = mediaPasteType;
+
+  // ── Shared upload helper ──
+  async function uploadFiles(files){
+    const actType = mediaPasteType;
+    if(!actType){ showNotif('请先选择目标活动类型', true); return; }
+    const imgFiles = [...files].filter(f => f.type.startsWith('image/'));
+    if(!imgFiles.length){ showNotif('没有可上传的图片文件', true); return; }
+    const candidates = activities
+      .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
+      .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+    if(!candidates.length){
+      showNotif(`找不到「${actType}」类型的活动，请先创建相关活动`, true);
+      return;
+    }
+    const actId = candidates[0].id;
+    showNotif(`正在上传 ${imgFiles.length} 张图片到「${candidates[0].name}」…`);
+    for(const file of imgFiles) await processFiles([file], actId);
+    renderMain();
+  }
+
+  // ── Drag & drop on droparea ──
+  droparea.addEventListener('dragover', e=>{
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('drag-over');
+    droparea.classList.add('drag-over');
+  });
+  droparea.addEventListener('dragleave', e=>{
+    e.stopPropagation();
+    zone.classList.remove('drag-over');
+    droparea.classList.remove('drag-over');
+  });
+  droparea.addEventListener('drop', async e=>{
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('drag-over');
+    droparea.classList.remove('drag-over');
+    await uploadFiles(e.dataTransfer.files);
+  });
+
+  // ── Global paste handler (always active while media tab open) ──
+  const pasteHandler = async (e) => {
+    // Only intercept if not typing in an input/select/textarea
+    if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+    if(!items) return;
+    const imageItems = [...items].filter(it => it.type.startsWith('image/'));
+    if(!imageItems.length) return;
+    e.preventDefault();
+    const fileList = imageItems.map(it => it.getAsFile()).filter(Boolean);
+    await uploadFiles(fileList);
+  };
+  document.addEventListener('paste', pasteHandler);
+
+  // ── Cleanup on tab switch ──
+  const prev = window._mediaPasteCleanup;
+  if(prev) prev();
+  window._mediaPasteCleanup = () => document.removeEventListener('paste', pasteHandler);
+}
+
+// Called by the file input's onchange
+async function mediaFileSelected(e){
+  const files = e.target.files;
+  if(!files || !files.length) return;
+  const actType = mediaPasteType;
+  if(!actType){ showNotif('请先选择目标活动类型', true); e.target.value=''; return; }
+  const candidates = activities
+    .filter(a => a.type === actType && (mediaGame==='all' || a.game===mediaGame))
+    .sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+  if(!candidates.length){
+    showNotif(`找不到「${actType}」类型的活动，请先创建相关活动`, true);
+    e.target.value=''; return;
+  }
+  const actId = candidates[0].id;
+  const imgFiles = [...files].filter(f => f.type.startsWith('image/'));
+  if(!imgFiles.length){ showNotif('请选择图片文件', true); e.target.value=''; return; }
+  showNotif(`正在上传 ${imgFiles.length} 张图片到「${candidates[0].name}」…`);
+  for(const file of imgFiles) await processFiles([file], actId);
+  e.target.value = '';
+  renderMain();
+}
+// ===================== END MEDIA UPLOAD ZONE =====================
 
 function openLightboxFromMedia(actId, attId){
   _lbActId=actId; 
@@ -2864,7 +4837,7 @@ function copyActivity(id){
         <select id="f-trigger-type">${TRIGGER_TYPES.map(item=>`<option value="${item.value}" ${selectedTriggerType===item.value?'selected':''}>${item.label}</option>`).join('')}</select></div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">活动渠道（Ctrl多选）<span class="req">*</span></div>
-          <select id="f-channels" multiple style="height:72px">${CHANNELS.map(ch=>`<option ${(v('channels',['海外服'])).includes(ch)?'selected':''}>${ch}</option>`).join('')}</select></div>
+          <select id="f-channels" multiple style="height:72px">${CHANNELS.map(c=>`<option ${v('channels',[]).includes(c)?'selected':''}>${c}</option>`).join('')}</select></div>
         <div class="fg"><div class="flabel">活动目标（Ctrl多选）</div>
           <select id="f-goals" multiple style="height:72px">${TARGETS.map(t=>`<option ${v('goals',[]).includes(t)?'selected':''}>${t}</option>`).join('')}</select></div>
       </div>
