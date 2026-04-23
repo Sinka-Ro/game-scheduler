@@ -2646,7 +2646,7 @@ function showTip(e,id,mode){
   const atts = attachments[actId]||[];
   const cover = atts.find(att=>att.type==='image');
   const coverHtml = cover
-    ? `<img src="${cover.data}" alt="封面" style="width:100%;max-height:140px;object-fit:cover;display:block;border-bottom:1px solid var(--border)">`
+    ? `<img src="${cover.data}" alt="封面" style="width:100%;max-height:200px;object-fit:contain;display:block;background:var(--bg2);border-bottom:1px solid var(--border)">`
     : '';
   t.innerHTML=`${coverHtml}<div style="padding:10px 14px">
     <div class="tip-title">${a.name}</div>
