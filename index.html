@@ -121,7 +121,7 @@ tr:hover td{background:var(--bg2)}
 .gantt-left .left-rows::-webkit-scrollbar{display:none}
 
 /* Tooltip */
-.tip{position:fixed;background:var(--bg);border:1px solid var(--border2);border-radius:7px;padding:10px 14px;font-size:12px;z-index:9999;pointer-events:none;max-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.12);display:none}
+.tip{position:fixed;background:var(--bg);border:1px solid var(--border2);border-radius:7px;padding:0;font-size:12px;z-index:9999;pointer-events:none;max-width:280px;box-shadow:0 4px 16px rgba(0,0,0,.12);display:none;overflow:hidden}
 .tip-title{font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text)}
 .tip-row{color:var(--text2);margin-bottom:3px;line-height:1.5}
 .tip-row span{color:var(--text);font-weight:500}
@@ -590,7 +590,7 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-const CLOUD_SYNC_POLL_MS = 5000;
+const CLOUD_SYNC_POLL_MS = 60000; // 60s poll — reduces egress
 let _clientId = '';
 let _syncChannel = null;
 let _syncPollTimer = null;
@@ -2641,7 +2641,15 @@ function showTip(e,id,mode){
   const a=findActivityByRef(id);if(!a)return;
   const t=document.getElementById('tip');
   const st=getStatus(a);
-  t.innerHTML=`<div class="tip-title">${a.name}</div>
+  // Find cover image: first image in this activity's attachments, or from _coverRef
+  const actId = a._coverRef || a.id;
+  const atts = attachments[actId]||[];
+  const cover = atts.find(att=>att.type==='image');
+  const coverHtml = cover
+    ? `<img src="${cover.data}" alt="封面" style="width:100%;max-height:140px;object-fit:cover;display:block;border-bottom:1px solid var(--border)">`
+    : '';
+  t.innerHTML=`${coverHtml}<div style="padding:10px 14px">
+    <div class="tip-title">${a.name}</div>
     <div class="tip-row">竞品：<span>${a.game}</span></div>
     <div class="tip-row">类型：<span>${a.type}</span></div>
     <div class="tip-row">触发：<span>${getTriggerLabel(a.triggerType)}</span></div>
@@ -2649,14 +2657,15 @@ function showTip(e,id,mode){
     ${mode==='preheat'&&a.preheat?`<div class="tip-row" style="color:var(--primary)">预热：<span>${a.preheat.split(' ')[0]} 起</span></div>`:''}
     ${a.intensity?`<div class="tip-row">力度：<span>${a.intensity}</span></div>`:''}
     <div class="tip-row">渠道：<span>${a.channels.join(' / ')}</span></div>
-    <div style="margin-top:6px"><span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span></div>`;
+    <div style="margin-top:6px"><span class="tag" style="background:${st.bg};color:${st.color}">${st.label}</span></div>
+  </div>`;
   t.style.display='block';
   moveTip(e);
 }
 function moveTip(e){
   const t=document.getElementById('tip');
   const x=Math.min(e.clientX+14,window.innerWidth-280);
-  const y=Math.min(e.clientY+14,window.innerHeight-140);
+  const y=Math.min(e.clientY+14,window.innerHeight-200);
   t.style.left=x+'px';t.style.top=y+'px';
 }
 function hideTip(){document.getElementById('tip').style.display='none'}
@@ -3660,6 +3669,38 @@ function renderLogsView(container){
 }
 
 // ===================== MODALS =====================
+// ── Duration <-> end time helpers ──
+function calcEndFromDuration(){
+  const s = document.getElementById('f-start')?.value;
+  const d = parseInt(document.getElementById('f-duration')?.value);
+  if(!s || isNaN(d) || d < 1) return;
+  const start = new Date(s);
+  start.setDate(start.getDate() + d - 1);
+  start.setHours(23, 59, 0, 0);
+  const pad = v => String(v).padStart(2,'0');
+  const val = `${start.getFullYear()}-${pad(start.getMonth()+1)}-${pad(start.getDate())}T23:59`;
+  const el = document.getElementById('f-end');
+  if(el) el.value = val;
+}
+function calcDurationFromDates(){
+  const s = document.getElementById('f-start')?.value;
+  const e = document.getElementById('f-end')?.value;
+  if(!s || !e) return;
+  const diff = Math.ceil((new Date(e) - new Date(s)) / 86400000) + 1;
+  const el = document.getElementById('f-duration');
+  if(el && diff > 0) el.value = diff;
+}
+function initDurationField(){
+  // on load: calc duration from existing start/end
+  calcDurationFromDates();
+  const fs = document.getElementById('f-start');
+  const fe = document.getElementById('f-end');
+  const fd = document.getElementById('f-duration');
+  if(fs) fs.addEventListener('change', ()=>{ calcEndFromDuration(); calcDurationFromDates(); });
+  if(fe) fe.addEventListener('change', calcDurationFromDates);
+  if(fd) fd.addEventListener('input', calcEndFromDuration);
+}
+
 function showModal(mode,id){
   if(currentUser.role==='viewer'){showNotif('您没有编辑权限',true);return}
   const a=id?findActivityByRef(id):null;
@@ -3697,6 +3738,14 @@ function showModal(mode,id){
           <input id="f-start" type="datetime-local" value="${v('startTime',(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}T10:00`;})())}"></div>
         <div class="fg"><div class="flabel">结束时间 <span class="req">*</span></div>
           <input id="f-end" type="datetime-local" value="${v('endTime',(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(new Date(n.getFullYear(),n.getMonth()+1,0).getDate()).padStart(2,'0')}T23:59`;})())}"></div>
+      </div>
+      <div class="fg full" style="margin-top:-6px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text3)">持续时间：</span>
+          <input id="f-duration" type="number" min="1" max="3650" placeholder="天数" oninput="calcEndFromDuration()"
+            style="width:80px;font-size:12px;padding:4px 7px;border:1px solid var(--border2);border-radius:5px;outline:none">
+          <span style="font-size:11px;color:var(--text3)">天（填开始时间+天数可自动算结束时间，或填开始+结束自动算天数）</span>
+        </div>
       </div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">预热时间（可选）</div>
@@ -3759,7 +3808,7 @@ function showModal(mode,id){
     </div>
   </div>`;
   document.body.appendChild(ov);
-  setTimeout(()=>initTypeSearchDropdown(document.getElementById('f-type')?.value||''),0);
+  setTimeout(()=>{ initTypeSearchDropdown(document.getElementById('f-type')?.value||''); initDurationField(); },0);
 }
 
 function toggleCyclePanel(){
@@ -3911,7 +3960,8 @@ function saveActivity(){
     ensureGameTypeVisible(g, t);
     const dc=s.split(' ')[0].replace(/-/g,'');
     const newId=generateUniqueActId(g, t, dc, []);
-    const createdActivity = normalizeActivity({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now});
+    const coverRef = document.getElementById('f-cover-ref')?.value || '';
+    const createdActivity = normalizeActivity({id:newId,game:g,type:t,name:n,startTime:s,endTime:e,preheat:ph,channels,goals,intensity,rules,note,source:src,triggerType,important,creator:currentUser.name,createTime:now,modifier:currentUser.name,modifyTime:now,...(coverRef?{_coverRef:coverRef}:{})});
     activities.unshift(createdActivity);
     addLog(`新增了《${g}》${n}`, {undo:{kind:'activity_create', refs:[getActivityRef(createdActivity)]}});
     showNotif(`新增成功：《${g}》${t} · ${n}`);
@@ -4794,6 +4844,14 @@ function copyActivity(id){
         <div class="fg"><div class="flabel">结束时间 <span class="req">*</span></div>
           <input id="f-end" type="datetime-local" value="${v('endTime','').replace(' ','T')}"></div>
       </div>
+      <div class="fg full" style="margin-top:-6px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text3)">持续时间：</span>
+          <input id="f-duration" type="number" min="1" max="3650" placeholder="天数" oninput="calcEndFromDuration()"
+            style="width:80px;font-size:12px;padding:4px 7px;border:1px solid var(--border2);border-radius:5px;outline:none">
+          <span style="font-size:11px;color:var(--text3)">天（填开始时间+天数可自动算结束时间，或填开始+结束自动算天数）</span>
+        </div>
+      </div>
       <div class="form-grid">
         <div class="fg"><div class="flabel">预热时间（可选）</div>
           <input id="f-preheat" type="datetime-local" value="${v('preheat','').replace(' ','T')}"></div>
@@ -4818,6 +4876,7 @@ function copyActivity(id){
         <input type="checkbox" id="f-important" ${v('important')?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:#f59e0b">
         <span style="font-size:12px;font-weight:500;color:#713f12">⭐ 标记为重要活动</span>
       </div>
+      <input type="hidden" id="f-cover-ref" value="${a.id}">
       <div style="font-size:11px;color:var(--text3);padding:7px 10px;background:var(--bg2);border-radius:5px">保存后将生成新的活动ID · 请修改时间避免与原活动冲突</div>
     </div>
     <div class="modal-ft">
@@ -4826,6 +4885,7 @@ function copyActivity(id){
     </div>
   </div>`;
   document.body.appendChild(ov);
+  setTimeout(()=>initDurationField(),0);
 }
 
 // ===================== DAILY RECOMMENDATIONS =====================
