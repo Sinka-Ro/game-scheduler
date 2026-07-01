@@ -590,7 +590,6 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-let _sbConfigError = '';
 const CLOUD_SYNC_POLL_MS = 60000; // 60s poll — reduces egress
 let _clientId = '';
 let _syncChannel = null;
@@ -601,68 +600,20 @@ let _syncLastMainRev = 0;
 let _syncLastAttachmentSig = '';
 let _lastLocalSaveRev = 0;
 let _lastLocalAttachmentSig = '';
-let _pendingAttachmentSaves = {}; // { [actId]: signature for an in-flight attachment save }
-let _unsyncedAttachmentActIds = {}; // { [actId]: true when cloud attachment save failed }
 let _syncDeferred = false;
 let _syncVisibilityBound = false;
 
-function escapeHtml(str){
-  return String(str ?? '')
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
-}
-
-function getSupabaseRefFromKey(key){
-  try{
-    const parts = String(key || '').split('.');
-    if(parts.length < 2) return '';
-    let payload = parts[1].replace(/-/g,'+').replace(/_/g,'/');
-    payload += '='.repeat((4 - payload.length % 4) % 4);
-    const data = JSON.parse(atob(payload));
-    return data && data.ref ? String(data.ref).trim() : '';
-  }catch(e){
-    return '';
-  }
-}
-
-function normalizeSupabaseUrlForKey(url, key){
-  const ref = getSupabaseRefFromKey(key);
-  if(!ref) return (url || '').trim().replace(/\/$/,'');
-  try{
-    const parsed = new URL((url || '').trim());
-    if(parsed.hostname === `${ref}.supabase.co`) return parsed.origin.replace(/\/$/,'');
-  }catch(e){}
-  return `https://${ref}.supabase.co`;
-}
-
-function resolveSupabaseConfig(local){
-  const localKey = (local && local._sbKey ? local._sbKey : '').trim();
-  const localUrl = localKey ? normalizeSupabaseUrlForKey(local && local._sbUrl ? local._sbUrl : '', localKey) : '';
-  const localTable = (local && local._sbTable ? local._sbTable : '').trim() || 'scheduler_data';
-  if(localUrl && localKey){
-    return { url: localUrl, key: localKey, table: localTable, source: 'localStorage' };
-  }
-
-  const htmlKey = (_sbKey || '').trim();
-  const htmlUrl = htmlKey ? normalizeSupabaseUrlForKey(_sbUrl || '', htmlKey) : '';
-  const htmlTable = (_sbTable || '').trim() || 'scheduler_data';
-  if(htmlUrl && htmlKey){
-    return { url: htmlUrl, key: htmlKey, table: htmlTable, source: 'hardcoded' };
-  }
-
-  return null;
-}
-
 function getSB(){
   if(_sb) return _sb;
-  const cfg = resolveSupabaseConfig(lsLoad());
-  if(cfg && window.supabase){
-    _sbUrl = cfg.url;
-    _sbKey = cfg.key;
-    _sbTable = cfg.table;
+  // Priority 1: hardcoded values in HTML (set by admin before deploying)
+  if(_sbUrl && _sbKey && window.supabase){
+    _sb = window.supabase.createClient(_sbUrl, _sbKey);
+    return _sb;
+  }
+  // Priority 2: localStorage (used during initial setup by admin)
+  const cfg = lsLoad();
+  if(cfg && cfg._sbUrl && cfg._sbKey && window.supabase){
+    _sbUrl = cfg._sbUrl; _sbKey = cfg._sbKey;
     _sb = window.supabase.createClient(_sbUrl, _sbKey);
   }
   return _sb;
@@ -911,18 +862,8 @@ function showAuthOverlay(state){
 
   if(state==='nosupabase'){
     if(tabs) tabs.style.display='none';
-    if(sub)  sub.textContent='请使用当前可用的 Supabase Project URL 和 anon key 完成初始化';
+    if(sub)  sub.textContent='访问受限';
     const el=document.getElementById('aform-nosupabase'); if(el) el.style.display='';
-    const urlInput=document.getElementById('setup-sb-url');
-    const keyInput=document.getElementById('setup-sb-key');
-    const msgEl=document.getElementById('setup-sb-msg');
-    if(urlInput && _sbUrl && !urlInput.value) urlInput.value=_sbUrl;
-    if(keyInput && _sbKey && !keyInput.value) keyInput.value=_sbKey;
-    if(msgEl){
-      msgEl.innerHTML = _sbConfigError
-        ? `<div class="amsg err" style="margin-top:8px">当前写死的 Supabase 配置不可用：${escapeHtml(_sbConfigError)}<br>如果你刚恢复了新项目，请把新的 Project URL 和新的 anon key 填到这里。</div>`
-        : '';
-    }
   } else if(state==='pending'){
     if(tabs) tabs.style.display='none';
     if(sub)  sub.textContent='账号待审批';
@@ -1025,7 +966,7 @@ let _sbKey   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 // ═══════════════════════════════════════════════════════════════
 
 let _sbTable = 'scheduler_data';
-window.__APP_VERSION__ = 'v37-attachment-merge-restore-20260630';
+window.__APP_VERSION__ = 'v32-fixed-20260318-01';
 
 // ─── Status Bar ───
 function initStatusBar(){
@@ -1099,65 +1040,6 @@ function getAttachmentsSignature(src){
     ].join(':')).join(',');
     return `${actId}[${items}]`;
   }).join('|');
-}
-
-function getSingleAttachmentSignature(actId, src){
-  const obj = {};
-  obj[actId] = ((src || attachments || {})[actId] || []);
-  return getAttachmentsSignature(obj);
-}
-
-function hasPendingAttachmentSaves(){
-  return Object.keys(_pendingAttachmentSaves).length > 0;
-}
-
-function mergeAttachmentLists(localList, remoteList, localWins){
-  const byId = new Map();
-  (remoteList || []).forEach(att=>{
-    if(att && att.id) byId.set(att.id, att);
-  });
-  (localList || []).forEach(att=>{
-    if(!att || !att.id) return;
-    if(localWins || !byId.has(att.id)) byId.set(att.id, att);
-  });
-  return [...byId.values()];
-}
-
-function mergeAttachmentsFromCloud(remoteAttachments){
-  const merged = {};
-  const actIds = new Set([
-    ...Object.keys(remoteAttachments || {}),
-    ...Object.keys(attachments || {})
-  ]);
-  actIds.forEach(actId=>{
-    const localList = attachments[actId] || [];
-    const remoteList = remoteAttachments[actId] || [];
-    const remoteIds = new Set(remoteList.map(att=>att && att.id).filter(Boolean));
-    const hasLocalOnly = localList.some(att=>att && att.id && !remoteIds.has(att.id));
-    const list = mergeAttachmentLists(localList, remoteList, true);
-    if(hasLocalOnly){
-      _unsyncedAttachmentActIds[actId] = true;
-    }else if(!_pendingAttachmentSaves[actId]){
-      delete _unsyncedAttachmentActIds[actId];
-    }
-    if(list.length) merged[actId] = list;
-  });
-  attachments = merged;
-  persistUnsyncedAttachmentFlags();
-  if(_sbReady && _sbUrl && _sbKey){
-    setTimeout(()=>{
-      Object.keys(_unsyncedAttachmentActIds).forEach(actId=>{
-        if((attachments[actId] || []).length) saveAttachmentsFor(actId);
-      });
-    }, 0);
-  }
-  return { items: attachments, signature:getAttachmentsSignature(attachments) };
-}
-
-function persistUnsyncedAttachmentFlags(){
-  const local = lsLoad() || {};
-  local._unsyncedAttachmentActIds = _unsyncedAttachmentActIds;
-  lsSave(local);
 }
 
 function persistSnapshotToLocal(snapshot){
@@ -1247,7 +1129,7 @@ function updateSyncMarkers(snapshot){
 }
 
 function shouldDelayCloudApply(){
-  return !!document.getElementById('modal-overlay') || !!_saveTimer || hasPendingAttachmentSaves();
+  return !!document.getElementById('modal-overlay') || !!_saveTimer;
 }
 
 async function refreshCloudState(opts){
@@ -1647,7 +1529,8 @@ async function sbReadAttachments(){
   const rows = await r.json();
   const nextAttachments = {};
   if(!rows||!rows.length){
-    return mergeAttachmentsFromCloud(nextAttachments);
+    attachments = nextAttachments;
+    return { items: attachments, signature:'' };
   }
   rows.forEach(row=>{
     try{
@@ -1656,7 +1539,8 @@ async function sbReadAttachments(){
       if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
     }catch(e){}
   });
-  return mergeAttachmentsFromCloud(nextAttachments);
+  attachments = nextAttachments;
+  return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
 async function sbSaveAttachments(actId){
@@ -1682,15 +1566,18 @@ async function loadData(){
   }
   if(local && local._snapshot)    applySnapshot(local._snapshot);
   if(local && local._attachments) Object.assign(attachments, local._attachments);
-  if(local && local._unsyncedAttachmentActIds) _unsyncedAttachmentActIds = local._unsyncedAttachmentActIds;
   if(local && local._ui) applyUiState(local._ui);
 
-  const resolvedCfg = resolveSupabaseConfig(local);
+  // Priority: hardcoded values in HTML > localStorage config
+  // This ensures ALL users connect to the same Supabase even without localStorage config
+  const effectiveUrl = _sbUrl || (local && local._sbUrl) || '';
+  const effectiveKey = _sbKey || (local && local._sbKey) || '';
+  const effectiveTable = _sbTable || (local && local._sbTable) || 'scheduler_data';
 
-  if(resolvedCfg && window.supabase){
-    _sbUrl   = resolvedCfg.url;
-    _sbKey   = resolvedCfg.key;
-    _sbTable = resolvedCfg.table;
+  if(effectiveUrl && effectiveKey && window.supabase){
+    _sbUrl   = effectiveUrl;
+    _sbKey   = effectiveKey;
+    _sbTable = effectiveTable;
     _sb = null;
     try{
       const cloud = await sbReadRow('main_data');
@@ -1716,11 +1603,8 @@ async function loadData(){
         _syncLastAttachmentSig = getAttachmentsSignature(attachments);
         if(currentUser.id) renderMain();
       }).catch(e=>console.warn('Attachment load failed',e));
-      _sbConfigError = '';
     }catch(e){
       console.warn('Supabase load failed',e);
-      _sbReady = false;
-      _sbConfigError = e && e.message ? e.message : String(e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
     }
     return true;
@@ -1746,22 +1630,11 @@ async function saveAttachmentsFor(actId){
   local._attachments = attachments;
   lsSave(local);
   if(_sbReady && _sbUrl && _sbKey){
-    const expectedSig = getSingleAttachmentSignature(actId);
-    _pendingAttachmentSaves[actId] = expectedSig;
     _lastLocalAttachmentSig = getAttachmentsSignature(attachments);
-    sbSaveAttachments(actId).then(()=>{
-      if(_pendingAttachmentSaves[actId] === expectedSig){
-        delete _pendingAttachmentSaves[actId];
-        delete _unsyncedAttachmentActIds[actId];
-        persistUnsyncedAttachmentFlags();
-      }
-    }).catch(e=>{
+    sbSaveAttachments(actId).catch(e=>{
       console.warn('Attachment sync failed',e);
-      _unsyncedAttachmentActIds[actId] = true;
-      persistUnsyncedAttachmentFlags();
       showNotif(`附件云端同步失败（本地已保存）: ${e.message}`,true);
     }).finally(()=>{
-      if(_pendingAttachmentSaves[actId] === expectedSig) delete _pendingAttachmentSaves[actId];
       _syncLastAttachmentSig = _lastLocalAttachmentSig;
     });
   }
@@ -4250,47 +4123,14 @@ function onFileSelect(e,actId){processFiles([...e.target.files], actId);e.target
 
 const STORAGE_BUCKET = 'media';
 
-function safeStorageSegment(value, fallback){
-  const raw = String(value || '').trim();
-  const safe = raw
-    .trim()
-    .replace(/[^a-zA-Z0-9.\-_]+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^[_\-.]+|[_\-.]+$/g, '')
-    .slice(0, 80);
-  if(safe) return safe;
-  if(!raw) return fallback;
-  let hash = 0;
-  for(let i=0;i<raw.length;i++) hash = ((hash * 31) + raw.charCodeAt(i)) >>> 0;
-  return `${fallback}_${hash.toString(36)}`;
-}
-
-function safeStorageFileName(name){
-  const raw = String(name || '').trim();
-  const extMatch = raw.match(/\.([a-zA-Z0-9]{1,8})$/);
-  const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-  const base = extMatch ? raw.slice(0, -extMatch[0].length) : raw;
-  return `${safeStorageSegment(base, 'image')}.${safeStorageSegment(ext, 'jpg')}`;
-}
-
-function buildStoragePath(game, type, attId, fileName){
-  const safeGame = safeStorageSegment(game, 'game');
-  const safeType = safeStorageSegment(type, 'type');
-  const safeId = safeStorageSegment(attId, `att_${Date.now()}`);
-  return `activities/${safeGame}/${safeType}/${safeId}_${safeStorageFileName(fileName)}`;
-}
-
 function storageUrl(path){
-  const encodedPath = String(path).split('/').map(encodeURIComponent).join('/');
-  return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${encodedPath}`;
+  return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
 }
 
 async function uploadToStorage(path, blob, mimeType){
-  const encodedPath = String(path).split('/').map(encodeURIComponent).join('/');
-  const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${encodedPath}`, {
+  const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
     method: 'POST',
     headers: {
-      'apikey': _sbKey,
       'Authorization': 'Bearer ' + _sbKey,
       'Content-Type': mimeType,
       'x-upsert': 'true'
@@ -4303,10 +4143,9 @@ async function uploadToStorage(path, blob, mimeType){
 
 async function deleteFromStorage(path){
   if(!path || !_sbUrl || !_sbKey) return;
-  const encodedPath = String(path).split('/').map(encodeURIComponent).join('/');
-  await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${encodedPath}`, {
+  await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
     method: 'DELETE',
-    headers: { 'apikey': _sbKey, 'Authorization': 'Bearer ' + _sbKey }
+    headers: { 'Authorization': 'Bearer ' + _sbKey }
   }).catch(()=>{});
 }
 
@@ -4392,7 +4231,8 @@ async function processFiles(files, actId){
       if(_sbReady && _sbUrl && _sbKey){
         // Upload to Supabase Storage
         try{
-          const path = buildStoragePath(game, type, attId, file.name);
+          const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
+          const path = `${game}/${type}/${attId}_${safeName}`;
           attData = await uploadToStorage(path, compressed, 'image/jpeg');
           // Store path for deletion later
           const att = { id:attId, name:file.name, type:'image', size:attSize,
@@ -5623,10 +5463,10 @@ initStatusBar();
 
 async function init(){
   await loadData();
-  const sb = getSB(); // initialize client
+  getSB(); // initialize client
   const ld=document.getElementById('cloud-loader');
 
-  if(sb && _sbReady){
+  if(getSB()){
     // Supabase is configured — check if already logged in
     const loggedIn = await checkAuthState();
     if(ld) ld.remove();
@@ -5638,7 +5478,8 @@ async function init(){
     }
     // handleAuthUser() calls renderMain() on successful login
   } else {
-    // Supabase is missing or the stored config is no longer usable.
+    // Supabase not yet configured in this file
+    // Only the admin who is setting up for the first time should see the setup form
     if(ld) ld.remove();
     currentUser={id:'',name:'',role:'none',email:''};
     updateTopbarUser();
