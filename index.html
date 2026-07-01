@@ -590,12 +590,17 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-const CLOUD_SYNC_POLL_MS = 60000; // 60s poll — reduces egress
+const CLOUD_SYNC_POLL_MS = 300000; // 5m main-data poll; realtime still handles fast updates
+const ATTACHMENT_SYNC_MAX_AGE_MS = 600000; // 10m attachment sync throttle
 let _clientId = '';
 let _syncChannel = null;
 let _syncPollTimer = null;
 let _syncReloadTimer = null;
+let _attachmentSyncTimer = null;
 let _syncBusy = false;
+let _attachmentSyncBusy = false;
+let _attachmentsDirty = false;
+let _attachmentsLastSyncAt = 0;
 let _syncLastMainRev = 0;
 let _syncLastAttachmentSig = '';
 let _lastLocalSaveRev = 0;
@@ -1042,10 +1047,66 @@ function getAttachmentsSignature(src){
   }).join('|');
 }
 
+function persistAttachmentsToLocal(){
+  const local = lsLoad() || {};
+  local._attachments = attachments;
+  local._attachmentsDirty = _attachmentsDirty;
+  local._attachmentsLastSyncAt = _attachmentsLastSyncAt;
+  lsSave(local);
+}
+
+function markAttachmentsDirty(){
+  _attachmentsDirty = true;
+  const local = lsLoad() || {};
+  local._attachmentsDirty = true;
+  lsSave(local);
+}
+
+function shouldSyncAttachments(force){
+  if(force) return true;
+  if(!Object.keys(attachments || {}).length) return true;
+  if(_attachmentsDirty) return true;
+  if(!_attachmentsLastSyncAt) return true;
+  return Date.now() - _attachmentsLastSyncAt >= ATTACHMENT_SYNC_MAX_AGE_MS;
+}
+
+async function syncAttachmentsIfNeeded(opts){
+  const options = opts || {};
+  if(!_sbReady || !_sbUrl || !_sbKey) return false;
+  if(_attachmentSyncBusy) return false;
+  if(!shouldSyncAttachments(!!options.force)) return false;
+  _attachmentSyncBusy = true;
+  try{
+    if(options.notify) showNotif('正在同步附件缓存...');
+    await sbReadAttachments();
+    _attachmentsDirty = false;
+    _attachmentsLastSyncAt = Date.now();
+    _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+    persistAttachmentsToLocal();
+    updateBarTs();
+    if(options.notify) showNotif('附件缓存已同步');
+    if(options.render !== false && currentUser.id) renderMain();
+    return true;
+  }catch(e){
+    console.warn('Attachment cache sync failed', e);
+    if(options.notify || options.reportError) showNotif(`附件同步失败：${e.message}`, true);
+    return false;
+  }finally{
+    _attachmentSyncBusy = false;
+  }
+}
+
+function requestAttachmentSync(reason, opts){
+  const options = opts || {};
+  setTimeout(()=>syncAttachmentsIfNeeded({...options, reason}), 0);
+}
+
 function persistSnapshotToLocal(snapshot){
   const local = lsLoad() || {};
   local._snapshot = snapshot;
   local._attachments = attachments;
+  local._attachmentsDirty = _attachmentsDirty;
+  local._attachmentsLastSyncAt = _attachmentsLastSyncAt;
   lsSave(local);
 }
 
@@ -1162,18 +1223,30 @@ async function refreshCloudState(opts){
   try{
     const cloud = await sbReadRow('main_data');
     if(!cloud) return false;
-    await sbReadAttachments();
     const nextRev = getSnapshotRevision(cloud);
-    const nextAttSig = getAttachmentsSignature(attachments);
-    const changed = !!options.force || nextRev > _syncLastMainRev || nextAttSig !== _syncLastAttachmentSig;
+    const mainChanged = !!options.force || nextRev > _syncLastMainRev;
+    let attachmentChanged = false;
+    let nextAttSig = _syncLastAttachmentSig;
+    if(options.includeAttachments){
+      await sbReadAttachments();
+      _attachmentsDirty = false;
+      _attachmentsLastSyncAt = Date.now();
+      nextAttSig = getAttachmentsSignature(attachments);
+      attachmentChanged = !!options.force || nextAttSig !== _syncLastAttachmentSig;
+    }
+    const changed = mainChanged || attachmentChanged;
     if(!changed) return false;
     const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
     const ownAttachmentWrite = nextAttSig && nextAttSig === _lastLocalAttachmentSig;
 
-    // BUG1 FIX: use merge mode — never discard local-only activities
-    applySnapshot(cloud, { merge: true });
-    persistSnapshotToLocal(buildSnapshot());
-    _syncLastMainRev = nextRev;
+    if(mainChanged){
+      // BUG1 FIX: use merge mode — never discard local-only activities
+      applySnapshot(cloud, { merge: true });
+      persistSnapshotToLocal(buildSnapshot());
+      _syncLastMainRev = nextRev;
+    } else if(attachmentChanged){
+      persistAttachmentsToLocal();
+    }
     _syncLastAttachmentSig = nextAttSig;
     updateTopbarUser();
     if(currentUser.id) renderMain();
@@ -1202,6 +1275,7 @@ function scheduleCloudRefresh(reason, opts){
       notify: options.notify,
       message: options.message,
       reportError: !!options.reportError,
+      includeAttachments: !!options.includeAttachments,
       reason
     });
   }, reason === 'poll' ? 0 : 250);
@@ -1216,6 +1290,7 @@ function flushDeferredCloudRefresh(){
 function stopCloudSync(){
   if(_syncReloadTimer){ clearTimeout(_syncReloadTimer); _syncReloadTimer = null; }
   if(_syncPollTimer){ clearInterval(_syncPollTimer); _syncPollTimer = null; }
+  if(_attachmentSyncTimer){ clearInterval(_attachmentSyncTimer); _attachmentSyncTimer = null; }
   const sb = getSB();
   if(_syncChannel && sb && sb.removeChannel){
     try{ sb.removeChannel(_syncChannel); }catch(e){}
@@ -1238,8 +1313,13 @@ function startCloudSync(){
         table:_sbTable
       }, payload=>{
         const rowId = payload?.new?.id || payload?.old?.id || '';
-        if(rowId === 'main_data' || String(rowId).startsWith('att_')){
+        if(rowId === 'main_data'){
           scheduleCloudRefresh('realtime', { notify:true });
+        } else if(String(rowId).startsWith('att_')){
+          markAttachmentsDirty();
+          if(currentTab === 'media' || document.getElementById('modal-overlay')){
+            requestAttachmentSync('realtime-attachment', { notify:false, render:true });
+          }
         }
       }).subscribe(status=>{
         if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
@@ -1254,9 +1334,18 @@ function startCloudSync(){
     if(document.hidden) return;
     scheduleCloudRefresh('poll', { notify:false });
   }, CLOUD_SYNC_POLL_MS);
+  _attachmentSyncTimer = setInterval(()=>{
+    if(document.hidden) return;
+    if(currentTab === 'media' || document.getElementById('modal-overlay')){
+      requestAttachmentSync('attachment-cache-interval', { notify:false, render:currentTab === 'media' });
+    }
+  }, ATTACHMENT_SYNC_MAX_AGE_MS);
   if(!_syncVisibilityBound){
     document.addEventListener('visibilitychange', ()=>{
       if(!document.hidden) scheduleCloudRefresh('focus', { notify:false });
+      if(!document.hidden && (currentTab === 'media' || document.getElementById('modal-overlay'))){
+        requestAttachmentSync('focus-attachment-cache', { notify:false, render:currentTab === 'media' });
+      }
     });
     _syncVisibilityBound = true;
   }
@@ -1566,6 +1655,8 @@ async function loadData(){
   }
   if(local && local._snapshot)    applySnapshot(local._snapshot);
   if(local && local._attachments) Object.assign(attachments, local._attachments);
+  _attachmentsDirty = !!(local && local._attachmentsDirty);
+  _attachmentsLastSyncAt = Number(local && local._attachmentsLastSyncAt || 0);
   if(local && local._ui) applyUiState(local._ui);
 
   // Priority: hardcoded values in HTML > localStorage config
@@ -1595,14 +1686,9 @@ async function loadData(){
       if(cloud) persistSnapshotToLocal(buildSnapshot());
       updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
-      sbReadAttachments().then(()=>{
-        const latest = lsLoad() || {};
-        latest._attachments = attachments;
-        // Save the merged snapshot (already in localStorage from above), just update attachments.
-        lsSave(latest);
-        _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-        if(currentUser.id) renderMain();
-      }).catch(e=>console.warn('Attachment load failed',e));
+      if(!Object.keys(attachments || {}).length){
+        requestAttachmentSync('startup-empty-attachment-cache', { force:true, notify:false, render:true });
+      }
     }catch(e){
       console.warn('Supabase load failed',e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
@@ -1626,8 +1712,11 @@ async function saveData(){
 
 // Call after modifying attachments for a specific activity
 async function saveAttachmentsFor(actId){
+  _attachmentsLastSyncAt = Date.now();
   const local = lsLoad()||{};
   local._attachments = attachments;
+  local._attachmentsDirty = _attachmentsDirty;
+  local._attachmentsLastSyncAt = _attachmentsLastSyncAt;
   lsSave(local);
   if(_sbReady && _sbUrl && _sbKey){
     _lastLocalAttachmentSig = getAttachmentsSignature(attachments);
@@ -1636,6 +1725,7 @@ async function saveAttachmentsFor(actId){
       showNotif(`附件云端同步失败（本地已保存）: ${e.message}`,true);
     }).finally(()=>{
       _syncLastAttachmentSig = _lastLocalAttachmentSig;
+      persistAttachmentsToLocal();
     });
   }
 }
@@ -4057,6 +4147,9 @@ function showDetail(id){
     </div>
   </div>`;
   document.body.appendChild(ov);
+  syncAttachmentsIfNeeded({ notify:false, render:false, reason:'detail-open' }).then(changed=>{
+    if(changed && document.getElementById('attach-list-' + actId)) refreshAttachList(actId);
+  });
   // Bind paste-to-upload on the detail modal
   if(canEdit){
     const _pasteHandler = async (e) => {
@@ -4442,6 +4535,7 @@ function lbDeleteConfirmed(actId, attId){
 
 // ─── Media Library View ───
 function renderMediaView(container){
+  requestAttachmentSync('media-open', { notify:false, render:true });
   const allGames=['all',...GAMES];
 
   // Build items list
@@ -4573,6 +4667,7 @@ function renderMediaView(container){
               ⬇ 导出图片（${filteredItems.filter(({att})=>att.type==='image').length}张）
             </button>`
           :''}
+        <button class="btn sm" onclick="syncAttachmentsIfNeeded({force:true,notify:true,render:true,reason:'manual-media-sync'})" style="font-size:11px;white-space:nowrap">同步附件</button>
       </div>
     </div>
     <div class="media-type-bar">
