@@ -1558,9 +1558,42 @@ async function sbReadAttachments(){
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
-async function sbSaveAttachments(actId){
+function mergeAttachmentArrays(remote, local){
+  const map = new Map();
+  (Array.isArray(remote) ? remote : []).forEach(att=>{
+    if(att && att.id) map.set(att.id, att);
+  });
+  (Array.isArray(local) ? local : []).forEach(att=>{
+    if(att && att.id) map.set(att.id, att);
+  });
+  return [...map.values()].sort((a,b)=>String(a.addedAt || '').localeCompare(String(b.addedAt || '')));
+}
+
+async function sbReadAttachmentRow(actId){
+  const rowId = `att_${actId}`;
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=payload`, {
+    headers: await storageAuthHeaders()
+  });
+  if(!r.ok) return [];
+  const rows = await r.json();
+  if(!rows || !rows.length) return [];
+  try{
+    const parsed = JSON.parse(rows[0].payload);
+    return Array.isArray(parsed) ? parsed : [];
+  }catch(e){
+    return [];
+  }
+}
+
+async function sbSaveAttachments(actId, options){
   if(!_sbReady||!_sbUrl||!_sbKey) return;
-  const atts=attachments[actId];
+  const replace = !!(options && options.replace);
+  let atts=attachments[actId];
+  if(atts && atts.length && !replace){
+    const remote = await sbReadAttachmentRow(actId);
+    atts = mergeAttachmentArrays(remote, atts);
+    attachments[actId] = atts;
+  }
   if(!atts||!atts.length){
     // No attachments left — delete the row
     fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.att_${encodeURIComponent(actId)}`,{
@@ -1655,7 +1688,7 @@ async function saveAttachmentsFor(actId){
   }
 }
 
-async function saveAttachmentsFor(actId){
+async function saveAttachmentsFor(actId, options){
   const local = lsLoad()||{};
   local._attachments = attachments;
   lsSave(local);
@@ -1664,7 +1697,7 @@ async function saveAttachmentsFor(actId){
   _attachmentSavePending++;
   const run = async ()=>{
     _lastLocalAttachmentSig = getAttachmentsSignature(attachments);
-    await sbSaveAttachments(actId);
+    await sbSaveAttachments(actId, options);
     const latest = lsLoad() || {};
     latest._attachments = attachments;
     lsSave(latest);
@@ -4436,7 +4469,7 @@ function deleteAttachment(actId, attId){
     deleteFromStorage(att.storagePath).catch(()=>{});
   }
   refreshAttachList(actId);
-  saveAttachmentsFor(actId);
+  saveAttachmentsFor(actId, { replace:true });
   showNotif('附件已删除');
 }
 
