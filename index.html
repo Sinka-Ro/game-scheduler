@@ -590,7 +590,7 @@ let mediaPasteType='';       // persisted paste target type — survives re-rend
 // -------------------------------------------------
 
 let _sb = null; // Supabase client instance
-const CLOUD_SYNC_POLL_MS = 60000; // 60s poll — reduces egress
+const CLOUD_SYNC_POLL_MS = 300000; // 5 min fallback poll; realtime handles most updates
 let _clientId = '';
 let _syncChannel = null;
 let _syncPollTimer = null;
@@ -922,6 +922,9 @@ let opLogs=[];
 // type: 'image' | 'video_url' | 'video'
 // data: base64 for images/videos, URL string for video_url
 let attachments = {};
+let imagesLoaded = false;
+let imagesLoading = false;
+let _cachedLocalAttachments = {};
 
 // reports: [ {id, title, desc, tags[], fileType, fileData, thumb, uploader, uploadTime, keywords} ]
 // fileType: 'pdf' | 'image' | 'link'
@@ -1160,14 +1163,13 @@ async function refreshCloudState(opts){
     return true;
   }
 
-  _syncBusy = true;
+    _syncBusy = true;
   try{
     const cloud = await sbReadRow('main_data');
     if(!cloud) return false;
-    await sbReadAttachments();
     const nextRev = getSnapshotRevision(cloud);
-    const nextAttSig = getAttachmentsSignature(attachments);
-    const changed = !!options.force || nextRev > _syncLastMainRev || nextAttSig !== _syncLastAttachmentSig;
+    const nextAttSig = _syncLastAttachmentSig;
+    const changed = !!options.force || nextRev > _syncLastMainRev;
     if(!changed) return false;
     const ownMainWrite = nextRev && nextRev === _lastLocalSaveRev;
     const ownAttachmentWrite = nextAttSig && nextAttSig === _lastLocalAttachmentSig;
@@ -1558,6 +1560,33 @@ async function sbReadAttachments(){
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
+async function loadImagesNow(actId){
+  if(imagesLoading) return;
+  imagesLoading = true;
+  try{
+    showNotif('Loading images...');
+    if(Object.keys(attachments || {}).length === 0 && _cachedLocalAttachments){
+      Object.assign(attachments, _cachedLocalAttachments);
+    }
+    if(_sbReady && _sbUrl && _sbKey){
+      await sbReadAttachments();
+      const latest = lsLoad() || {};
+      latest._attachments = attachments;
+      lsSave(latest);
+      _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+    }
+    imagesLoaded = true;
+    showNotif('Images loaded');
+    if(actId) refreshAttachList(actId);
+    if(currentTab === 'media') renderMain();
+  }catch(e){
+    console.warn('Load images failed', e);
+    showNotif(`Load images failed: ${e.message}`, true);
+  }finally{
+    imagesLoading = false;
+  }
+}
+
 function mergeAttachmentArrays(remote, local){
   const map = new Map();
   (Array.isArray(remote) ? remote : []).forEach(att=>{
@@ -1613,7 +1642,7 @@ async function loadData(){
     stripCloudConfigFromLocation();
   }
   if(local && local._snapshot)    applySnapshot(local._snapshot);
-  if(local && local._attachments) Object.assign(attachments, local._attachments);
+  if(local && local._attachments) _cachedLocalAttachments = local._attachments;
   if(local && local._ui) applyUiState(local._ui);
 
   // Priority: hardcoded values in HTML > localStorage config
@@ -1643,14 +1672,6 @@ async function loadData(){
       if(cloud) persistSnapshotToLocal(buildSnapshot());
       updateSyncMarkers(cloud || local?._snapshot || {});
       setBarState('cloud','云端已连接（Supabase）');
-      sbReadAttachments().then(()=>{
-        const latest = lsLoad() || {};
-        latest._attachments = attachments;
-        // Save the merged snapshot (already in localStorage from above), just update attachments.
-        lsSave(latest);
-        _syncLastAttachmentSig = getAttachmentsSignature(attachments);
-        if(currentUser.id) renderMain();
-      }).catch(e=>console.warn('Attachment load failed',e));
     }catch(e){
       console.warn('Supabase load failed',e);
       setBarState('error',`云端读取失败，使用本地数据（${e.message}）`);
@@ -4115,6 +4136,10 @@ function showDetail(id){
             <div style="font-size:10px;color:var(--text3);margin-top:3px">支持 JPG/PNG/GIF/MP4/MOV 等，单文件最大 5MB</div>
           </div>
         </div>`:''}
+        ${!imagesLoaded?`<div style="display:flex;align-items:center;gap:8px;margin:8px 0;color:var(--text3);font-size:11px">
+          <button class="btn sm primary" onclick="loadImagesNow('${actId}')" style="font-size:11px">Load images</button>
+          <span>Images are paused to reduce traffic.</span>
+        </div>`:''}
         <div class="attach-list" id="attach-list-${actId}">
           ${atts.map(att=>`
             <div class="attach-item" id="att-${att.id}">
@@ -4586,6 +4611,25 @@ function lbDeleteConfirmed(actId, attId){
 
 // ─── Media Library View ───
 function renderMediaView(container){
+  if(!imagesLoaded){
+    container.innerHTML=`<div class="media-view">
+      <div class="media-toolbar">
+        <div style="font-size:13px;font-weight:600">Media library</div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:var(--text3)">Images are not loaded automatically to reduce traffic.</span>
+          <button class="btn sm primary" onclick="loadImagesNow()" style="font-size:11px;white-space:nowrap">Load images</button>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);padding:40px;text-align:center">
+        <div>
+          <div style="font-size:14px;color:var(--text2);margin-bottom:8px">Image loading is paused</div>
+          <div style="font-size:12px;line-height:1.6;max-width:520px">Calendar data still syncs normally. Click Load images only when you need to browse the media library.</div>
+          <button class="btn primary" onclick="loadImagesNow()" style="margin-top:14px">Load images</button>
+        </div>
+      </div>
+    </div>`;
+    return;
+  }
   const allGames=['all',...GAMES];
 
   // Build items list
