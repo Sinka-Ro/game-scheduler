@@ -602,6 +602,8 @@ let _lastLocalSaveRev = 0;
 let _lastLocalAttachmentSig = '';
 let _syncDeferred = false;
 let _syncVisibilityBound = false;
+let _attachmentSavePending = 0;
+const _attachmentSaveQueues = {};
 
 function getSB(){
   if(_sb) return _sb;
@@ -1129,7 +1131,7 @@ function updateSyncMarkers(snapshot){
 }
 
 function shouldDelayCloudApply(){
-  return !!document.getElementById('modal-overlay') || !!_saveTimer;
+  return !!document.getElementById('modal-overlay') || !!_saveTimer || _attachmentSavePending > 0;
 }
 
 async function refreshCloudState(opts){
@@ -1637,6 +1639,41 @@ async function saveAttachmentsFor(actId){
     }).finally(()=>{
       _syncLastAttachmentSig = _lastLocalAttachmentSig;
     });
+  }
+}
+
+async function saveAttachmentsFor(actId){
+  const local = lsLoad()||{};
+  local._attachments = attachments;
+  lsSave(local);
+  if(!_sbReady || !_sbUrl || !_sbKey) return;
+
+  _attachmentSavePending++;
+  const run = async ()=>{
+    _lastLocalAttachmentSig = getAttachmentsSignature(attachments);
+    await sbSaveAttachments(actId);
+    const latest = lsLoad() || {};
+    latest._attachments = attachments;
+    lsSave(latest);
+    _syncLastAttachmentSig = getAttachmentsSignature(attachments);
+    updateBarTs();
+    setBarState('saved',`Saved attachments to cloud - ${ts()}`);
+  };
+
+  const previous = _attachmentSaveQueues[actId] || Promise.resolve();
+  const next = previous.catch(()=>{}).then(run);
+  _attachmentSaveQueues[actId] = next;
+
+  try{
+    await next;
+  }catch(e){
+    console.warn('Attachment sync failed',e);
+    setBarState('error',`Attachment cloud sync failed (saved locally): ${e.message}`);
+    showNotif(`Attachment cloud sync failed (saved locally): ${e.message}`,true);
+  }finally{
+    _attachmentSavePending = Math.max(0, _attachmentSavePending - 1);
+    if(_attachmentSaveQueues[actId] === next) delete _attachmentSaveQueues[actId];
+    if(_attachmentSavePending === 0) flushDeferredCloudRefresh();
   }
 }
 
@@ -4284,7 +4321,7 @@ async function processFiles(files, actId){
           attachments[actId].push(att);
           refreshAttachList(actId);
           // Save metadata to database (URL, not base64)
-          saveAttachmentsFor(actId);
+          await saveAttachmentsFor(actId);
           uploaded++;
           if(uploaded===total) showNotif(`成功上传 ${uploaded} 张图片（已压缩至80KB以内）`);
           continue;
@@ -4317,7 +4354,7 @@ async function processFiles(files, actId){
     if(!attachments[actId]) attachments[actId]=[];
     attachments[actId].push(att);
     refreshAttachList(actId);
-    saveAttachmentsFor(actId);
+    await saveAttachmentsFor(actId);
     uploaded++;
     if(uploaded===total) showNotif(`成功添加 ${uploaded} 个附件`);
   }
