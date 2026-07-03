@@ -1523,24 +1523,37 @@ async function sbReadRow(rowId){
 }
 
 async function sbReadAttachments(){
-  // Fetch all attachment rows in one query
-  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
-    headers: await storageAuthHeaders()
-  });
-  if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
-  const rows = await r.json();
+  // Fetch attachment rows by exact ids in chunks. A broad `like.att_*` query can
+  // time out once the table grows because payload rows are large.
+  const idSet = new Set();
+  activities.forEach(act=>{ if(act && act.id) idSet.add(`att_${act.id}`); });
+  Object.keys(attachments || {}).forEach(actId=>{ if(actId) idSet.add(`att_${actId}`); });
+  const ids = [...idSet];
   const nextAttachments = {};
-  if(!rows||!rows.length){
+  if(!ids.length){
     attachments = nextAttachments;
     return { items: attachments, signature:'' };
   }
-  rows.forEach(row=>{
-    try{
-      const actId = row.id.slice(4); // strip "att_" prefix
-      const atts  = JSON.parse(row.payload);
-      if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
-    }catch(e){}
-  });
+  const CHUNK_SIZE = 80;
+  for(let i=0;i<ids.length;i+=CHUNK_SIZE){
+    const chunk = ids.slice(i, i + CHUNK_SIZE);
+    const filter = chunk.map(encodeURIComponent).join(',');
+    const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=in.(${filter})&select=id,payload`, {
+      headers: await storageAuthHeaders()
+    });
+    if(!r.ok){
+      console.warn('Attachment chunk load failed', r.status, await r.text().catch(()=>''));
+      return { items: attachments, signature:getAttachmentsSignature(attachments) };
+    }
+    const rows = await r.json();
+    (rows || []).forEach(row=>{
+      try{
+        const actId = row.id.slice(4); // strip "att_" prefix
+        const atts  = JSON.parse(row.payload);
+        if(Array.isArray(atts)&&atts.length) nextAttachments[actId]=atts;
+      }catch(e){}
+    });
+  }
   attachments = nextAttachments;
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
