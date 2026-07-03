@@ -4123,14 +4123,55 @@ function onFileSelect(e,actId){processFiles([...e.target.files], actId);e.target
 
 const STORAGE_BUCKET = 'media';
 
+function storageHash(value){
+  const str = String(value || '');
+  let h = 2166136261;
+  for(let i=0;i<str.length;i++){
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+function storageSafeSegment(value, fallback){
+  const source = String(value || fallback || 'item').trim();
+  const normalized = source.normalize ? source.normalize('NFKD') : source;
+  const ascii = normalized
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64);
+  const hash = storageHash(source).slice(0, 8);
+  return ascii ? `${ascii}_${hash}` : `${fallback || 'item'}_${hash}`;
+}
+
+function storageSafeFileName(name, fallback){
+  const source = String(name || fallback || 'image.jpg').trim();
+  const normalized = source.normalize ? source.normalize('NFKD') : source;
+  let safe = normalized
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 96);
+  if(!safe || !/\.[A-Za-z0-9]{1,8}$/.test(safe)) safe = fallback || 'image.jpg';
+  return safe;
+}
+
+function encodeStoragePath(path){
+  return String(path || '').split('/').map(encodeURIComponent).join('/');
+}
+
 function storageUrl(path){
-  return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
+  return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeStoragePath(path)}`;
 }
 
 async function uploadToStorage(path, blob, mimeType){
-  const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
+  const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${encodeStoragePath(path)}`, {
     method: 'POST',
     headers: {
+      'apikey': _sbKey,
       'Authorization': 'Bearer ' + _sbKey,
       'Content-Type': mimeType,
       'x-upsert': 'true'
@@ -4143,9 +4184,9 @@ async function uploadToStorage(path, blob, mimeType){
 
 async function deleteFromStorage(path){
   if(!path || !_sbUrl || !_sbKey) return;
-  await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
+  await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${encodeStoragePath(path)}`, {
     method: 'DELETE',
-    headers: { 'Authorization': 'Bearer ' + _sbKey }
+    headers: { 'apikey': _sbKey, 'Authorization': 'Bearer ' + _sbKey }
   }).catch(()=>{});
 }
 
@@ -4231,8 +4272,10 @@ async function processFiles(files, actId){
       if(_sbReady && _sbUrl && _sbKey){
         // Upload to Supabase Storage
         try{
-          const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
-          const path = `${game}/${type}/${attId}_${safeName}`;
+          const safeGame = storageSafeSegment(game, 'game');
+          const safeType = storageSafeSegment(type, 'type');
+          const safeName = storageSafeFileName(file.name, `${attId}.jpg`);
+          const path = `${safeGame}/${safeType}/${attId}_${safeName}`;
           attData = await uploadToStorage(path, compressed, 'image/jpeg');
           // Store path for deletion later
           const att = { id:attId, name:file.name, type:'image', size:attSize,
