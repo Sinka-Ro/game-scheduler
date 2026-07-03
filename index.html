@@ -1504,8 +1504,8 @@ function applySnapshot(d, opts){
 
 async function sbUpsertRow(rowId, payload){
   const base = `${_sbUrl}/rest/v1/${_sbTable}`;
-  const hdrs = { 'Content-Type':'application/json', 'apikey':_sbKey,
-                 'Authorization':'Bearer '+_sbKey, 'Prefer':'return=minimal,resolution=merge-duplicates' };
+  const hdrs = await storageAuthHeaders({ 'Content-Type':'application/json',
+                 'Prefer':'return=minimal,resolution=merge-duplicates' });
   const body = JSON.stringify({ id: rowId, payload: JSON.stringify(payload) });
   // Use upsert (POST with merge-duplicates) — simpler and avoids PATCH/INSERT dance
   const r = await fetch(base, { method:'POST', headers:hdrs, body });
@@ -1514,7 +1514,7 @@ async function sbUpsertRow(rowId, payload){
 
 async function sbReadRow(rowId){
   const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=payload`, {
-    headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
+    headers: await storageAuthHeaders()
   });
   if(!r.ok) throw new Error(`读取失败 ${r.status}`);
   const rows = await r.json();
@@ -1525,7 +1525,7 @@ async function sbReadRow(rowId){
 async function sbReadAttachments(){
   // Fetch all attachment rows in one query
   const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=like.att_*&select=id,payload`, {
-    headers:{ 'apikey':_sbKey, 'Authorization':'Bearer '+_sbKey }
+    headers: await storageAuthHeaders()
   });
   if(!r.ok) return { items: attachments, signature:getAttachmentsSignature(attachments) };
   const rows = await r.json();
@@ -1551,7 +1551,7 @@ async function sbSaveAttachments(actId){
   if(!atts||!atts.length){
     // No attachments left — delete the row
     fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.att_${encodeURIComponent(actId)}`,{
-      method:'DELETE', headers:{'apikey':_sbKey,'Authorization':'Bearer '+_sbKey}
+      method:'DELETE', headers: await storageAuthHeaders()
     }).catch(()=>{});
     return;
   }
@@ -4204,15 +4204,33 @@ function storageUrl(path){
   return `${_sbUrl}/storage/v1/object/public/${STORAGE_BUCKET}/${encodeStoragePath(path)}`;
 }
 
+async function getSupabaseAccessToken(){
+  try{
+    const sb = getSB();
+    if(sb && sb.auth && sb.auth.getSession){
+      const {data} = await sb.auth.getSession();
+      if(data && data.session && data.session.access_token) return data.session.access_token;
+    }
+  }catch(e){
+    console.warn('Unable to read Supabase auth session', e);
+  }
+  return _sbKey;
+}
+
+async function storageAuthHeaders(extra){
+  const token = await getSupabaseAccessToken();
+  return Object.assign({
+    'apikey': _sbKey,
+    'Authorization': 'Bearer ' + token
+  }, extra || {});
+}
+
 async function uploadToStorage(path, blob, mimeType){
   const r = await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${encodeStoragePath(path)}`, {
     method: 'POST',
-    headers: {
-      'apikey': _sbKey,
-      'Authorization': 'Bearer ' + _sbKey,
-      'Content-Type': mimeType,
-      'x-upsert': 'true'
-    },
+    headers: await storageAuthHeaders({
+      'Content-Type': mimeType
+    }),
     body: blob
   });
   if(!r.ok){ const t=await r.text(); throw new Error(`Storage 上传失败 ${r.status}: ${t.slice(0,100)}`); }
@@ -4223,7 +4241,7 @@ async function deleteFromStorage(path){
   if(!path || !_sbUrl || !_sbKey) return;
   await fetch(`${_sbUrl}/storage/v1/object/${STORAGE_BUCKET}/${encodeStoragePath(path)}`, {
     method: 'DELETE',
-    headers: { 'apikey': _sbKey, 'Authorization': 'Bearer ' + _sbKey }
+    headers: await storageAuthHeaders()
   }).catch(()=>{});
 }
 
