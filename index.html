@@ -1560,23 +1560,57 @@ async function sbReadAttachments(){
   return { items: attachments, signature:getAttachmentsSignature(attachments) };
 }
 
+async function sbHasAttachmentRow(actId){
+  if(!_sbReady || !_sbUrl || !_sbKey || !actId) return false;
+  const rowId = `att_${actId}`;
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=id&limit=1`, {
+    headers: await storageAuthHeaders()
+  });
+  if(!r.ok) return false;
+  const rows = await r.json();
+  return !!(rows && rows.length);
+}
+
+async function sbReadOneAttachmentRow(actId){
+  if(!_sbReady || !_sbUrl || !_sbKey || !actId) return [];
+  const rowId = `att_${actId}`;
+  const r = await fetch(`${_sbUrl}/rest/v1/${_sbTable}?id=eq.${encodeURIComponent(rowId)}&select=payload`, {
+    headers: await storageAuthHeaders()
+  });
+  if(!r.ok) throw new Error(`Attachment read failed ${r.status}`);
+  const rows = await r.json();
+  if(!rows || !rows.length) return [];
+  try{
+    const atts = JSON.parse(rows[0].payload);
+    return Array.isArray(atts) ? atts : [];
+  }catch(e){
+    return [];
+  }
+}
+
 async function loadImagesNow(actId){
   if(imagesLoading) return;
   imagesLoading = true;
   try{
     showNotif('Loading images...');
-    if(Object.keys(attachments || {}).length === 0 && _cachedLocalAttachments){
+    if(!actId && Object.keys(attachments || {}).length === 0 && _cachedLocalAttachments){
       Object.assign(attachments, _cachedLocalAttachments);
     }
     if(_sbReady && _sbUrl && _sbKey){
-      await sbReadAttachments();
+      if(actId){
+        const atts = await sbReadOneAttachmentRow(actId);
+        if(atts.length) attachments[actId] = atts;
+        else delete attachments[actId];
+      } else {
+        await sbReadAttachments();
+      }
       const latest = lsLoad() || {};
       latest._attachments = attachments;
       lsSave(latest);
       _syncLastAttachmentSig = getAttachmentsSignature(attachments);
     }
-    imagesLoaded = true;
-    showNotif('Images loaded');
+    if(!actId) imagesLoaded = true;
+    showNotif(actId ? 'Activity images loaded' : 'Images loaded');
     if(actId) refreshAttachList(actId);
     if(currentTab === 'media') renderMain();
   }catch(e){
@@ -4136,9 +4170,9 @@ function showDetail(id){
             <div style="font-size:10px;color:var(--text3);margin-top:3px">支持 JPG/PNG/GIF/MP4/MOV 等，单文件最大 5MB</div>
           </div>
         </div>`:''}
-        ${!imagesLoaded?`<div style="display:flex;align-items:center;gap:8px;margin:8px 0;color:var(--text3);font-size:11px">
+        ${(!atts.length && !imagesLoaded)?`<div id="image-load-hint-${actId}" style="display:none;align-items:center;gap:8px;margin:8px 0;color:var(--text3);font-size:11px">
           <button class="btn sm primary" onclick="loadImagesNow('${actId}')" style="font-size:11px">Load images</button>
-          <span>Images are paused to reduce traffic.</span>
+          <span>This activity has images. Load only this activity to reduce traffic.</span>
         </div>`:''}
         <div class="attach-list" id="attach-list-${actId}">
           ${atts.map(att=>`
@@ -4165,6 +4199,12 @@ function showDetail(id){
     </div>
   </div>`;
   document.body.appendChild(ov);
+  if(!atts.length && !imagesLoaded){
+    sbHasAttachmentRow(actId).then(hasRow=>{
+      const hint = document.getElementById(`image-load-hint-${actId}`);
+      if(hint && hasRow) hint.style.display = 'flex';
+    }).catch(()=>{});
+  }
   // Bind paste-to-upload on the detail modal
   if(canEdit){
     const _pasteHandler = async (e) => {
